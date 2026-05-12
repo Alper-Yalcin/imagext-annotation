@@ -33,6 +33,11 @@ export function addProject(project: Project): void {
   saveProjects(projects);
 }
 
+export function updateProject(updatedProject: Project): void {
+  const projects = getProjects();
+  saveProjects(projects.map(project => project.id === updatedProject.id ? updatedProject : project));
+}
+
 export function deleteProject(projectId: string): void {
   const projects = getProjects();
   const updatedProjects = projects.filter(p => p.id !== projectId);

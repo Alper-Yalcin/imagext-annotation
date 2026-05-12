@@ -11,8 +11,8 @@ export function EmptyProjects() {
       description="Create your first annotation project, upload your dataset, and start labeling right in your browser."
       action={
         <Link to="/projects/new">
-          <Button variant="primary" className="bg-yellow-500 hover:bg-yellow-400 text-zinc-900 border-transparent">
-            <Plus className="w-5 h-5 mr-2" />
+          <Button variant="primary">
+            <Plus className="w-5 h-5" />
             Create Project
           </Button>
         </Link>

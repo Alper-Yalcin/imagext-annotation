@@ -1,57 +1,42 @@
 import { ClassLabel } from "../../types/project";
 import { Tag } from "lucide-react";
+import { getClassColor } from "../../utils/classColor";
 
 interface ClassListProps {
   classes: ClassLabel[];
+  counts?: Record<string, number>;
 }
 
-// Generate deterministic colors based on class name
-function getColorForClass(name: string): string {
-  const colors = [
-    "bg-red-500", "bg-orange-500", "bg-amber-500", "bg-green-500",
-    "bg-emerald-500", "bg-teal-500", "bg-cyan-500", "bg-blue-500",
-    "bg-indigo-500", "bg-violet-500", "bg-purple-500", "bg-fuchsia-500",
-    "bg-pink-500", "bg-rose-500"
-  ];
-  
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  
-  const index = Math.abs(hash) % colors.length;
-  return colors[index];
-}
-
-export function ClassList({ classes }: ClassListProps) {
+export function ClassList({ classes, counts = {} }: ClassListProps) {
   if (!classes || classes.length === 0) {
     return (
-      <div className="bg-zinc-800 rounded-xl border border-zinc-700 p-6 flex flex-col items-center justify-center text-center">
-        <Tag className="w-8 h-8 text-zinc-600 mb-3" />
-        <h4 className="text-zinc-300 font-medium font-semibold">No classes found</h4>
-        <p className="text-zinc-500 text-sm mt-1">This project does not have any classes configured.</p>
+      <div className="rounded-xl border border-dashed border-slate-700/60 bg-slate-950/30 p-6 text-center">
+        <Tag className="mx-auto mb-3 h-8 w-8 text-slate-600" />
+        <h4 className="font-semibold text-slate-300">No classes found</h4>
+        <p className="mt-1 text-sm text-slate-500">This project does not have any classes configured.</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-zinc-800 rounded-xl border border-zinc-700 p-5">
-      <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-        <Tag className="w-5 h-5 text-zinc-400" />
-        Classes <span className="text-zinc-500 text-sm font-normal">({classes.length})</span>
-      </h3>
-      
-      <div className="flex flex-wrap gap-2">
-        {classes.map((cls) => (
-          <div 
+    <div className="space-y-3">
+      {classes.map((cls, index) => {
+        const color = cls.color || getClassColor(cls.name, index);
+        return (
+          <div
             key={cls.id}
-            className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 px-3 py-1.5 rounded-lg"
+            className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2.5"
           >
-            <div className={`w-3 h-3 rounded-full ${getColorForClass(cls.name)}`}></div>
-            <span className="text-sm font-medium text-zinc-200">{cls.name}</span>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+              <span className="truncate text-sm font-semibold text-slate-200">{cls.name}</span>
+            </div>
+            <span className="rounded-md bg-slate-950/70 px-2 py-0.5 text-xs font-semibold text-slate-400">
+              {counts[cls.id] || 0}
+            </span>
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }

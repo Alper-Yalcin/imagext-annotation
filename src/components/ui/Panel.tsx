@@ -9,9 +9,9 @@ interface PanelProps {
 
 export function Panel({ title, children, headerRight, className = "" }: PanelProps) {
   return (
-    <div className={`flex flex-col bg-[#0B0F14] border border-white/10 rounded-2xl overflow-hidden ${className}`}>
+    <div className={`studio-surface flex flex-col rounded-xl overflow-hidden ${className}`}>
       {(title || headerRight) && (
-        <div className="flex items-center justify-between p-4 border-b border-white/5 bg-[#05070A]/50 shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/40 bg-slate-950/30 shrink-0">
           {typeof title === 'string' ? (
             <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
           ) : (

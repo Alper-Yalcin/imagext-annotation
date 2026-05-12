@@ -14,11 +14,11 @@ export function ProjectTypeSelector({ value, onChange }: ProjectTypeSelectorProp
         onClick={() => onChange("classification")}
         className={`flex items-start gap-4 p-4 rounded-xl border text-left transition-all ${
           value === "classification"
-            ? "bg-[#7C3AED]/10 border-[#7C3AED] shadow-[0_0_15px_rgba(124,58,237,0.15)]"
-            : "bg-[#05070A] border-white/5 hover:border-white/20"
+            ? "bg-violet-500/10 border-violet-400/70 shadow-[0_0_18px_rgba(124,58,237,0.16)]"
+            : "bg-slate-950/50 border-white/10 hover:border-white/20"
         }`}
       >
-        <div className={`p-2 rounded-lg shrink-0 ${value === "classification" ? "bg-[#7C3AED]/20 text-[#8B5CF6]" : "bg-white/5 text-slate-400"}`}>
+        <div className={`p-2 rounded-lg shrink-0 ${value === "classification" ? "bg-violet-500/20 text-violet-200" : "bg-white/5 text-slate-400"}`}>
           <Tag className="w-5 h-5" />
         </div>
         <div>
@@ -32,11 +32,11 @@ export function ProjectTypeSelector({ value, onChange }: ProjectTypeSelectorProp
         onClick={() => onChange("detection")}
         className={`flex items-start gap-4 p-4 rounded-xl border text-left transition-all ${
           value === "detection"
-            ? "bg-[#7C3AED]/10 border-[#7C3AED] shadow-[0_0_15px_rgba(124,58,237,0.15)]"
-            : "bg-[#05070A] border-white/5 hover:border-white/20"
+            ? "bg-violet-500/10 border-violet-400/70 shadow-[0_0_18px_rgba(124,58,237,0.16)]"
+            : "bg-slate-950/50 border-white/10 hover:border-white/20"
         }`}
       >
-        <div className={`p-2 rounded-lg shrink-0 ${value === "detection" ? "bg-[#7C3AED]/20 text-[#8B5CF6]" : "bg-white/5 text-slate-400"}`}>
+        <div className={`p-2 rounded-lg shrink-0 ${value === "detection" ? "bg-violet-500/20 text-violet-200" : "bg-white/5 text-slate-400"}`}>
           <Focus className="w-5 h-5" />
         </div>
         <div>

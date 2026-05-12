@@ -1,6 +1,7 @@
+import { Box, ChevronDown, Eye, Lock, Trash2 } from "lucide-react";
 import { DetectionAnnotation } from "../../types/annotation";
 import { ClassLabel } from "../../types/project";
-import { Trash2, Box, ChevronDown } from "lucide-react";
+import { getClassColor } from "../../utils/classColor";
 
 interface DetectionAnnotationListProps {
   boxes: DetectionAnnotation[];
@@ -11,82 +12,92 @@ interface DetectionAnnotationListProps {
   onChangeBoxClass: (boxId: string, classId: string) => void;
 }
 
-export function DetectionAnnotationList({ 
-  boxes, 
-  classes, 
-  selectedBoxId, 
-  onSelectBox, 
+export function DetectionAnnotationList({
+  boxes,
+  classes,
+  selectedBoxId,
+  onSelectBox,
   onDeleteBox,
-  onChangeBoxClass
+  onChangeBoxClass,
 }: DetectionAnnotationListProps) {
   return (
-    <div className="flex flex-col h-full">
-      <div className="p-4 border-b border-zinc-800 shrink-0">
-        <h3 className="font-semibold text-white flex items-center gap-2">
-          <Box className="w-4 h-4 text-zinc-400" />
-          Annotations <span className="text-zinc-500 font-normal">({boxes.length})</span>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="border-b border-slate-700/40 px-4 py-3">
+        <h3 className="flex items-center gap-2 text-sm font-bold text-white">
+          <Box className="h-4 w-4 text-slate-400" />
+          Annotation'lar
+          <span className="font-medium text-slate-500">({boxes.length})</span>
         </h3>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+      <div className="flex-1 space-y-2 overflow-y-auto p-3">
         {boxes.length === 0 ? (
-          <div className="text-center py-8 text-zinc-500 text-sm">
-            No boxes yet. Select a class and draw on the image.
+          <div className="rounded-xl border border-dashed border-slate-700/60 bg-slate-950/30 p-5 text-center text-sm text-slate-500">
+            Sinif secip gorsel uzerine kutu ciz.
           </div>
         ) : (
-          boxes.map((box) => {
+          boxes.map((box, index) => {
             const isSelected = box.id === selectedBoxId;
-            const currentClass = classes.find(c => c.id === box.classId);
-            
+            const currentClass = classes.find((c) => c.id === box.classId);
+            const color = currentClass?.color || getClassColor(currentClass?.name || "box", index);
+
             return (
               <div
                 key={box.id}
-                className={`flex flex-col gap-2 p-3 rounded-xl border transition-all ${
-                  isSelected 
-                    ? "bg-zinc-800 border-yellow-500/50" 
-                    : "bg-zinc-800/50 border-zinc-700/50 hover:border-zinc-500/50 hover:bg-zinc-800"
+                role="button"
+                tabIndex={0}
+                className={`rounded-xl border p-3 transition-all ${
+                  isSelected
+                    ? "border-violet-400/55 bg-violet-500/15 shadow-lg shadow-violet-950/20"
+                    : "border-white/10 bg-white/[0.035] hover:border-slate-500/70 hover:bg-white/[0.06]"
                 }`}
                 onClick={() => onSelectBox(box.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") onSelectBox(box.id);
+                }}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 flex-1">
-                    <div 
-                      className="w-3 h-3 rounded-full shrink-0" 
-                      style={{ backgroundColor: currentClass?.color || "#eab308" }}
-                    />
-                    <div className="relative flex-1">
-                      <select
-                        value={box.classId}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          onChangeBoxClass(box.id, e.target.value);
-                        }}
-                        className="w-full bg-zinc-900 border border-zinc-700 text-xs text-white rounded px-2 py-1 appearance-none focus:outline-none focus:border-yellow-500 cursor-pointer"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {classes.map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-3 h-3 text-zinc-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
+                <div className="flex items-center gap-2">
+                  <span className="h-6 w-6 shrink-0 rounded-full border border-white/10 bg-slate-950 text-center text-xs font-bold leading-6 text-slate-300">
+                    {index + 1}
+                  </span>
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+                  <div className="relative min-w-0 flex-1">
+                    <select
+                      value={box.classId}
+                      onChange={(event) => {
+                        event.stopPropagation();
+                        onChangeBoxClass(box.id, event.target.value);
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                      className="w-full appearance-none rounded-lg border border-white/10 bg-slate-950/70 px-2 py-1.5 pr-7 text-xs font-semibold text-white outline-none focus:border-violet-400/70"
+                    >
+                      {classes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
                   </div>
+                  <Eye className="h-3.5 w-3.5 text-slate-500" />
+                  <Lock className="h-3.5 w-3.5 text-slate-600" />
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
                       onDeleteBox(box.id);
                     }}
-                    className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors ml-2 shrink-0"
+                    className="rounded-md p-1.5 text-slate-500 hover:bg-rose-500/10 hover:text-rose-300"
                     title="Delete box"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                
-                <div className="text-[10px] items-center gap-2 grid grid-cols-4 font-mono text-zinc-500 px-1 text-center">
-                  <div title="X coordinate">x: {Math.round(box.x)}</div>
-                  <div title="Y coordinate">y: {Math.round(box.y)}</div>
-                  <div title="Width">w: {Math.round(box.width)}</div>
-                  <div title="Height">h: {Math.round(box.height)}</div>
+
+                <div className="mt-3 grid grid-cols-4 gap-1 text-center font-mono text-[10px] text-slate-500">
+                  <span>x {Math.round(box.x)}</span>
+                  <span>y {Math.round(box.y)}</span>
+                  <span>w {Math.round(box.width)}</span>
+                  <span>h {Math.round(box.height)}</span>
                 </div>
               </div>
             );

@@ -130,8 +130,8 @@ export function ImageUploader({ projectId, existingImages, onImagesUploaded }: I
   return (
     <div className="space-y-4">
       <div 
-        className={`bg-zinc-800/50 rounded-xl border-2 border-dashed p-8 flex flex-col items-center justify-center text-center transition-colors
-          ${isHovering ? "border-yellow-500 bg-yellow-500/5" : "border-zinc-700 hover:border-zinc-500"}`}
+        className={`studio-surface rounded-xl border border-dashed p-8 flex flex-col items-center justify-center text-center transition-all
+          ${isHovering ? "border-violet-400/70 bg-violet-500/10" : "border-slate-700/70 hover:border-slate-500/80"}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -154,18 +154,18 @@ export function ImageUploader({ projectId, existingImages, onImagesUploaded }: I
           className="hidden" 
         />
         
-        <div className="w-16 h-16 bg-zinc-800 rounded-2xl flex items-center justify-center mb-4 text-zinc-400">
-          <Upload className={`w-8 h-8 ${isUploading ? "animate-bounce text-yellow-500" : ""}`} />
+        <div className="w-14 h-14 bg-violet-500/12 border border-violet-400/20 rounded-xl flex items-center justify-center mb-4 text-violet-300">
+          <Upload className={`w-7 h-7 ${isUploading ? "animate-bounce text-violet-200" : ""}`} />
         </div>
         
         <h3 className="text-lg font-semibold text-white mb-2">
           {isUploading ? "Processing Images..." : "Upload Dataset"}
         </h3>
-        <p className="text-zinc-400 max-w-sm text-sm mb-6">
+        <p className="text-slate-400 max-w-sm text-sm mb-6">
           Drag and drop files/folders here, or use the buttons below. Supported formats: JPG, PNG, WEBP.
         </p>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-center gap-3">
           <Button 
             variant="secondary" 
             onClick={handleFileClick} 

@@ -36,7 +36,7 @@ export function ClassLabelInput({ labels, onAdd, onRemove }: ClassLabelInputProp
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="e.g. cat, car, person"
-          className="flex-1 bg-[#05070A] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-[#7C3AED] focus:ring-1 focus:ring-[#7C3AED] transition-all"
+          className="studio-input flex-1 px-4 py-3"
         />
         <button
           type="button"
@@ -50,13 +50,13 @@ export function ClassLabelInput({ labels, onAdd, onRemove }: ClassLabelInputProp
       </div>
 
       {labels.length > 0 && (
-        <div className="flex flex-wrap gap-2 p-4 bg-[#05070A]/50 border border-white/5 rounded-xl">
+        <div className="flex flex-wrap gap-2 p-4 bg-slate-950/50 border border-white/10 rounded-xl">
           {labels.map((label) => (
             <div
               key={label.id}
-              className="group flex items-center gap-2 bg-[#7C3AED]/10 border border-[#7C3AED]/20 px-3 py-1.5 rounded-lg"
+              className="group flex items-center gap-2 bg-violet-500/10 border border-violet-400/20 px-3 py-1.5 rounded-lg"
             >
-              <div className="w-2 h-2 rounded-full bg-[#8B5CF6]"></div>
+              <div className="w-2 h-2 rounded-full bg-violet-300"></div>
               <span className="text-sm font-medium text-slate-200">{label.name}</span>
               <button
                 type="button"
@@ -72,7 +72,7 @@ export function ClassLabelInput({ labels, onAdd, onRemove }: ClassLabelInputProp
       )}
       
       {labels.length === 0 && (
-        <div className="text-sm text-slate-500 py-4 bg-[#05070A]/30 border border-dashed border-white/10 rounded-xl flex items-center justify-center">
+        <div className="text-sm text-slate-500 py-4 bg-slate-950/30 border border-dashed border-white/10 rounded-xl flex items-center justify-center">
           No classes added yet. Add at least one class to continue.
         </div>
       )}

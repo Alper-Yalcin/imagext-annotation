@@ -54,6 +54,11 @@ export function deleteClassificationAnnotationsByProjectId(projectId: string): v
   saveClassificationAnnotations(annotations.filter(a => a.projectId !== projectId));
 }
 
+export function deleteClassificationAnnotationsByClassId(projectId: string, classId: string): void {
+  const annotations = getClassificationAnnotations();
+  saveClassificationAnnotations(annotations.filter(a => !(a.projectId === projectId && a.classId === classId)));
+}
+
 export function getDetectionAnnotations(): DetectionAnnotation[] {
   const stored = localStorage.getItem(DETECTION_STORAGE_KEY);
   if (stored) {
@@ -105,4 +110,9 @@ export function deleteDetectionAnnotationsByImageId(imageId: string): void {
 export function deleteDetectionAnnotationsByProjectId(projectId: string): void {
   const annotations = getDetectionAnnotations();
   saveDetectionAnnotations(annotations.filter(a => a.projectId !== projectId));
+}
+
+export function deleteDetectionAnnotationsByClassId(projectId: string, classId: string): void {
+  const annotations = getDetectionAnnotations();
+  saveDetectionAnnotations(annotations.filter(a => !(a.projectId === projectId && a.classId === classId)));
 }

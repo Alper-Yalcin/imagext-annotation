@@ -14,13 +14,13 @@ export function Breadcrumbs({ items }: { items: BreadcrumbItem[] }) {
         const isLast = index === items.length - 1;
         
         return (
-          <React.Fragment key={index}>
+          <React.Fragment key={`${item.label}-${index}`}>
             {item.path && !isLast ? (
-              <Link to={item.path} className="text-slate-400 hover:text-slate-200 transition-colors">
+              <Link to={item.path} className="text-slate-500 hover:text-slate-200 transition-colors">
                 {item.label}
               </Link>
             ) : (
-              <span className={isLast ? "text-slate-100" : "text-slate-400"}>
+              <span className={isLast ? "text-slate-100" : "text-slate-500"}>
                 {item.label}
               </span>
             )}

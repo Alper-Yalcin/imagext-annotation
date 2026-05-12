@@ -1,17 +1,33 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  Keyboard,
+  Save,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import useImage from "use-image";
 import { Project } from "../../types/project";
 import { ImageItem } from "../../types/image";
 import { DetectionAnnotation } from "../../types/annotation";
 import { ImageSidebar } from "./ImageSidebar";
 import { ClassPanel } from "./ClassPanel";
 import { DetectionAnnotationList } from "./DetectionAnnotationList";
-import { ArrowLeft, Save, ChevronLeft, ChevronRight, AlertTriangle, MousePointer2, Square, ZoomIn, ZoomOut, Maximize, Keyboard, Hand } from "lucide-react";
-import { getDetectionAnnotationsByImageId, replaceDetectionAnnotationsForImage } from "../../storage/annotationStorage";
+import { AnnotationToolbar, AnnotationToolMode } from "./AnnotationToolbar";
+import { DetectionCanvas } from "./DetectionCanvas";
+import {
+  deleteDetectionAnnotationsByClassId,
+  getDetectionAnnotationsByImageId,
+  replaceDetectionAnnotationsForImage,
+} from "../../storage/annotationStorage";
 import { updateImageStatus } from "../../storage/imageStorage";
+import { updateProject } from "../../storage/projectStorage";
 import { createId } from "../../utils/id";
-import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group } from 'react-konva';
-import useImage from 'use-image';
+import { getClassColor } from "../../utils/classColor";
 import { useConfirm } from "../../context/ConfirmContext";
 import { useToast } from "../../context/ToastContext";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
@@ -23,45 +39,45 @@ interface YoloAnnotatorProps {
   initialImages: ImageItem[];
 }
 
-type ToolMode = "draw" | "select" | "pan";
-
 export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
   const navigate = useNavigate();
+  const [activeProject, setActiveProject] = useState<Project>(project);
   const [images, setImages] = useState<ImageItem[]>(initialImages);
   const [currentIndex, setCurrentIndex] = useState(0);
-  
-  const [selectedClassId, setSelectedClassId] = useState<string | undefined>(undefined);
-  const [toolMode, setToolMode] = useState<ToolMode>("draw");
-  
+  const [selectedClassId, setSelectedClassId] = useState<string | undefined>();
+  const [toolMode, setToolMode] = useState<AnnotationToolMode>("draw");
   const [boxes, setBoxes] = useState<DetectionAnnotation[]>([]);
   const [savedBoxes, setSavedBoxes] = useState<DetectionAnnotation[]>([]);
-  const [selectedBoxId, setSelectedBoxId] = useState<string | undefined>(undefined);
-  
+  const [selectedBoxId, setSelectedBoxId] = useState<string | undefined>();
   const [history, setHistory] = useState<DetectionAnnotation[][]>([]);
   const [redoStack, setRedoStack] = useState<DetectionAnnotation[][]>([]);
-  
   const [scale, setScale] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
-  const containerRef = useRef<HTMLDivElement>(null);
-  
-  const currentImage = images[currentIndex];
-  // use-image hook to load HTMLImageElement for konva
-  const [konvaImage] = useImage(currentImage?.dataUrl || '');
-
-  const isDirty = JSON.stringify(boxes) !== JSON.stringify(savedBoxes);
-
-  const { confirm } = useConfirm();
-  const { showToast } = useToast();
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-
-  // Drawing state
   const [isDrawing, setIsDrawing] = useState(false);
-  const [newBox, setNewBox] = useState<{ x: number, y: number, width: number, height: number } | null>(null);
+  const [newBox, setNewBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const transformerRef = useRef<any>(null);
+  const currentImage = images[currentIndex];
+  const [konvaImage] = useImage(currentImage?.dataUrl || "");
+  const isDirty = JSON.stringify(boxes) !== JSON.stringify(savedBoxes);
+  const { confirm } = useConfirm();
+  const { showToast } = useToast();
 
-  // Fetch data on load
+  const fitToScreen = useCallback(() => {
+    if (!containerRef.current || !currentImage) return;
+    const { clientWidth, clientHeight } = containerRef.current;
+    if (clientWidth === 0 || clientHeight === 0) return;
+
+    const padding = 56;
+    const scaleX = (clientWidth - padding * 2) / currentImage.width;
+    const scaleY = (clientHeight - padding * 2) / currentImage.height;
+    setScale(Math.min(1, Math.max(0.1, Math.min(scaleX, scaleY))));
+    setStagePos({ x: 0, y: 0 });
+  }, [currentImage]);
+
   useEffect(() => {
     if (currentImage) {
       const annotations = getDetectionAnnotationsByImageId(currentImage.id);
@@ -71,112 +87,49 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
       setRedoStack([]);
       setSelectedBoxId(undefined);
       setToolMode("draw");
-      
-      // Auto-fit image
-      if (containerRef.current) {
-         fitToScreen();
-      }
+      window.requestAnimationFrame(fitToScreen);
     }
-  }, [currentIndex, currentImage]);
-
-  // Fit to screen utility
-  const fitToScreen = useCallback(() => {
-    if (!containerRef.current || !currentImage) return;
-    const { clientWidth, clientHeight } = containerRef.current;
-    if (clientWidth === 0 || clientHeight === 0) return;
-    
-    const padding = 40;
-    const scaleX = (clientWidth - padding * 2) / currentImage.width;
-    const scaleY = (clientHeight - padding * 2) / currentImage.height;
-    
-    let newScale = Math.min(scaleX, scaleY);
-    if (newScale > 1) newScale = 1; 
-    setScale(newScale);
-    setStagePos({ x: 0, y: 0 }); // reset pan on fit
-  }, [currentImage]);
+  }, [currentIndex, currentImage, fitToScreen]);
 
   useEffect(() => {
-    // Attach transformer to selected box
     if (toolMode === "select" && selectedBoxId && transformerRef.current) {
       const node = transformerRef.current.getStage().findOne(`#${selectedBoxId}`);
       if (node) {
         transformerRef.current.nodes([node]);
         transformerRef.current.getLayer().batchDraw();
       }
+    } else if (transformerRef.current) {
+      transformerRef.current.nodes([]);
+      transformerRef.current.getLayer()?.batchDraw();
     }
   }, [selectedBoxId, toolMode, boxes]);
 
-  // Undo / Redo keybinds standard
-  useEffect(() => {
-    const handleCtrlZ = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key.toLowerCase() === "z") {
-          e.preventDefault();
-          handleUndo();
-        } else if (e.key.toLowerCase() === "y" || (e.shiftKey && e.key.toLowerCase() === "z")) {
-          e.preventDefault();
-          handleRedo();
-        }
-      }
-    };
-    window.addEventListener("keydown", handleCtrlZ);
-    return () => window.removeEventListener("keydown", handleCtrlZ);
-  }, [history, redoStack, boxes]);
-
   const saveToHistory = () => {
-    setHistory([...history, [...boxes]]);
+    setHistory((prev) => [...prev, [...boxes]]);
     setRedoStack([]);
   };
 
-  const handleUndo = () => {
-    if (history.length > 0) {
-      const prevBoxes = history[history.length - 1];
-      setRedoStack([[...boxes], ...redoStack]);
-      setBoxes(prevBoxes);
-      setHistory(history.slice(0, -1));
+  const handleUndo = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.length === 0) return prev;
+      const previousBoxes = prev[prev.length - 1];
+      setRedoStack((redo) => [[...boxes], ...redo]);
+      setBoxes(previousBoxes);
       setSelectedBoxId(undefined);
-    }
-  };
+      return prev.slice(0, -1);
+    });
+  }, [boxes]);
 
-  const handleRedo = () => {
-    if (redoStack.length > 0) {
-      const nextBoxes = redoStack[0];
-      setHistory([...history, [...boxes]]);
+  const handleRedo = useCallback(() => {
+    setRedoStack((prev) => {
+      if (prev.length === 0) return prev;
+      const nextBoxes = prev[0];
+      setHistory((historyItems) => [...historyItems, [...boxes]]);
       setBoxes(nextBoxes);
-      setRedoStack(redoStack.slice(1));
       setSelectedBoxId(undefined);
-    }
-  };
-
-  const handleWheel = (e: any) => {
-    e.evt.preventDefault();
-    if (!currentImage) return;
-
-    const scaleBy = 1.1;
-    const stage = e.target.getStage();
-    const oldScale = scale;
-
-    const pointer = stage.getPointerPosition();
-    if (!pointer) return;
-
-    // Calculate mouse position relative to stage (ignoring offset)
-    const mousePointTo = {
-      x: (pointer.x - stagePos.x) / oldScale,
-      y: (pointer.y - stagePos.y) / oldScale,
-    };
-
-    // Zoom in or out
-    let newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
-    newScale = Math.max(0.1, Math.min(newScale, 10)); // bounds
-
-    setScale(newScale);
-
-    const newPos = {
-      x: pointer.x - mousePointTo.x * newScale,
-      y: pointer.y - mousePointTo.y * newScale,
-    };
-    setStagePos(newPos);
-  };
+      return prev.slice(1);
+    });
+  }, [boxes]);
 
   const requestImageChange = async (newIndex: number) => {
     if (isDirty) {
@@ -184,7 +137,7 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
         title: "Unsaved Changes",
         message: "You have unsaved changes. Do you want to continue without saving?",
         confirmLabel: "Discard Changes",
-        variant: "danger"
+        variant: "danger",
       });
       if (!isConfirmed) return;
     }
@@ -192,25 +145,20 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
   };
 
   const handleSelectImage = (imageId: string) => {
-    const idx = images.findIndex(img => img.id === imageId);
-    if (idx !== -1 && idx !== currentIndex) {
-      requestImageChange(idx);
-    }
+    const idx = images.findIndex((img) => img.id === imageId);
+    if (idx !== -1 && idx !== currentIndex) requestImageChange(idx);
   };
 
   const handlePrev = useCallback(() => {
-    if (currentIndex > 0) {
-      requestImageChange(currentIndex - 1);
-    }
-  }, [currentIndex, isDirty, confirm]);
+    if (currentIndex > 0) requestImageChange(currentIndex - 1);
+  }, [currentIndex, isDirty]);
 
   const handleNext = useCallback(() => {
-    if (currentIndex < images.length - 1) {
-      requestImageChange(currentIndex + 1);
-    }
-  }, [currentIndex, images.length, isDirty, confirm]);
+    if (currentIndex < images.length - 1) requestImageChange(currentIndex + 1);
+  }, [currentIndex, images.length, isDirty]);
 
   const handleSave = useCallback(async () => {
+    if (!currentImage) return;
     if (boxes.length === 0) {
       const goAhead = await confirm({
         title: "No Annotations",
@@ -221,29 +169,21 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
     }
 
     setIsSaving(true);
-    
     setTimeout(async () => {
       try {
-        replaceDetectionAnnotationsForImage(currentImage.id, project.id, boxes);
+        replaceDetectionAnnotationsForImage(currentImage.id, activeProject.id, boxes);
         await updateImageStatus(currentImage.id, "labeled");
         setSavedBoxes([...boxes]);
-        
-        setImages(prev => prev.map(img => 
-          img.id === currentImage.id ? { ...img, status: "labeled" } : img
-        ));
-
-        showToast({ type: "success", title: "Saved", message: "YOLO Annotations saved successfully." });
-      } catch (err) {
+        setImages((prev) => prev.map((img) => (img.id === currentImage.id ? { ...img, status: "labeled" } : img)));
+        showToast({ type: "success", title: "Saved", message: "YOLO annotations saved successfully." });
+      } catch {
         showToast({ type: "error", title: "Error", message: "Failed to save annotations." });
       } finally {
         setIsSaving(false);
-        
-        if (currentIndex < images.length - 1) {
-          setCurrentIndex(currentIndex + 1);
-        }
+        if (currentIndex < images.length - 1) setCurrentIndex(currentIndex + 1);
       }
     }, 100);
-  }, [boxes, currentImage, project.id, confirm, showToast, currentIndex, images.length]);
+  }, [boxes, currentImage, activeProject.id, confirm, showToast, currentIndex, images.length]);
 
   const handleBackToProject = async () => {
     if (isDirty) {
@@ -251,40 +191,273 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
         title: "Unsaved Changes",
         message: "You have unsaved changes. Return to project without saving?",
         confirmLabel: "Discard Changes",
-        variant: "danger"
+        variant: "danger",
       });
       if (!isConfirmed) return;
     }
-    navigate(`/projects/${project.id}`);
+    navigate(`/projects/${activeProject.id}`);
   };
 
-  const handleDeleteBox = (boxId: string) => {
+  const handleDeleteBox = useCallback(
+    (boxId: string) => {
+      saveToHistory();
+      setBoxes((prev) => prev.filter((b) => b.id !== boxId));
+      if (selectedBoxId === boxId) setSelectedBoxId(undefined);
+    },
+    [boxes, selectedBoxId],
+  );
+
+  const handleChangeBoxClass = (boxId: string, classId: string) => {
     saveToHistory();
-    setBoxes(boxes.filter(b => b.id !== boxId));
-    if (selectedBoxId === boxId) {
-      setSelectedBoxId(undefined);
+    setBoxes((prev) => prev.map((b) => (b.id === boxId ? { ...b, classId, updatedAt: new Date().toISOString() } : b)));
+  };
+
+  const handleAddClass = (className: string) => {
+    const trimmedName = className.trim();
+    if (!trimmedName) return false;
+
+    if (activeProject.classes.some(cls => cls.name.toLowerCase() === trimmedName.toLowerCase())) {
+      showToast({ type: "warning", title: "Class exists", message: `"${trimmedName}" is already in this project.` });
+      return false;
+    }
+
+    const newClass = {
+      id: createId("class"),
+      name: trimmedName,
+      color: getClassColor(trimmedName, activeProject.classes.length),
+    };
+    const updatedProject = { ...activeProject, classes: [...activeProject.classes, newClass] };
+
+    updateProject(updatedProject);
+    setActiveProject(updatedProject);
+    setSelectedClassId(newClass.id);
+    setToolMode("draw");
+    setSelectedBoxId(undefined);
+    showToast({ type: "success", title: "Class added", message: `"${trimmedName}" is ready to use.` });
+    return true;
+  };
+
+  const handleDeleteClass = async (classId: string) => {
+    const targetClass = activeProject.classes.find(cls => cls.id === classId);
+    if (!targetClass) return;
+
+    const affectedCurrentBoxes = boxes.filter(box => box.classId === classId).length;
+    const confirmed = await confirm({
+      title: "Delete Class",
+      message: `Delete "${targetClass.name}"? Existing annotations using this class will also be removed.`,
+      confirmLabel: "Delete Class",
+      variant: "danger",
+    });
+    if (!confirmed) return;
+
+    const updatedProject = {
+      ...activeProject,
+      classes: activeProject.classes.filter(cls => cls.id !== classId),
+    };
+
+    deleteDetectionAnnotationsByClassId(activeProject.id, classId);
+    updateProject(updatedProject);
+    setActiveProject(updatedProject);
+    setBoxes(prev => prev.filter(box => box.classId !== classId));
+    setSavedBoxes(prev => prev.filter(box => box.classId !== classId));
+    setHistory([]);
+    setRedoStack([]);
+    if (selectedClassId === classId) setSelectedClassId(undefined);
+    if (selectedBoxId && boxes.find(box => box.id === selectedBoxId)?.classId === classId) setSelectedBoxId(undefined);
+
+    showToast({
+      type: "info",
+      title: "Class deleted",
+      message: affectedCurrentBoxes > 0
+        ? `"${targetClass.name}" and ${affectedCurrentBoxes} current annotations were removed.`
+        : `"${targetClass.name}" was removed.`,
+    });
+  };
+
+  const getMousePos = (event: any) => {
+    const stage = event.target.getStage();
+    const pointerPos = stage.getPointerPosition();
+    if (!containerRef.current || !currentImage) return { x: 0, y: 0 };
+
+    const { clientWidth, clientHeight } = containerRef.current;
+    const imgW = currentImage.width * scale;
+    const imgH = currentImage.height * scale;
+    const offsetX = (clientWidth - imgW) / 2 + stagePos.x;
+    const offsetY = (clientHeight - imgH) / 2 + stagePos.y;
+
+    return {
+      x: (pointerPos.x - offsetX) / scale,
+      y: (pointerPos.y - offsetY) / scale,
+    };
+  };
+
+  const handleWheel = (event: any) => {
+    event.evt.preventDefault();
+    if (!currentImage) return;
+
+    const scaleBy = 1.1;
+    const stage = event.target.getStage();
+    const oldScale = scale;
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+
+    const mousePointTo = {
+      x: (pointer.x - stagePos.x) / oldScale,
+      y: (pointer.y - stagePos.y) / oldScale,
+    };
+
+    const nextScale = Math.max(0.1, Math.min(10, event.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy));
+    setScale(nextScale);
+    setStagePos({
+      x: pointer.x - mousePointTo.x * nextScale,
+      y: pointer.y - mousePointTo.y * nextScale,
+    });
+  };
+
+  const handleMouseDown = (event: any) => {
+    if (!currentImage) return;
+    if (event.target.getParent()?.className === "Transformer") return;
+    if (toolMode === "pan") return;
+
+    if (toolMode === "select") {
+      const clickedOnEmpty = event.target === event.target.getStage() || event.target.name() === "background-image";
+      if (clickedOnEmpty) setSelectedBoxId(undefined);
+      return;
+    }
+
+    if (!selectedClassId) {
+      showToast({ type: "warning", title: "Select a Class", message: "Please select a class first to draw a bounding box." });
+      return;
+    }
+
+    const pos = getMousePos(event);
+    if (pos.x < 0 || pos.y < 0 || pos.x > currentImage.width || pos.y > currentImage.height) return;
+    setIsDrawing(true);
+    setNewBox({ x: pos.x, y: pos.y, width: 0, height: 0 });
+  };
+
+  const handleMouseMove = (event: any) => {
+    if (!isDrawing || !newBox || !currentImage) return;
+    const pos = getMousePos(event);
+    const currX = Math.max(0, Math.min(pos.x, currentImage.width));
+    const currY = Math.max(0, Math.min(pos.y, currentImage.height));
+    setNewBox({ x: newBox.x, y: newBox.y, width: currX - newBox.x, height: currY - newBox.y });
+  };
+
+  const handleMouseUp = () => {
+    if (!isDrawing || !newBox || !currentImage || !selectedClassId) return;
+    setIsDrawing(false);
+
+    let bx = newBox.x;
+    let by = newBox.y;
+    let bw = newBox.width;
+    let bh = newBox.height;
+    if (bw < 0) {
+      bx += bw;
+      bw = Math.abs(bw);
+    }
+    if (bh < 0) {
+      by += bh;
+      bh = Math.abs(bh);
+    }
+    setNewBox(null);
+
+    if (bw >= 5 && bh >= 5) {
+      saveToHistory();
+      const newAnnotation: DetectionAnnotation = {
+        id: createId("box"),
+        imageId: currentImage.id,
+        projectId: activeProject.id,
+        classId: selectedClassId,
+        x: bx,
+        y: by,
+        width: bw,
+        height: bh,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setBoxes((prev) => [...prev, newAnnotation]);
+      setSelectedBoxId(newAnnotation.id);
+      setToolMode("select");
     }
   };
 
-  // Keyboard Shortcuts via Hook
+  const handleDragEnd = (event: any, boxId: string) => {
+    if (!currentImage) return;
+    const node = event.target;
+    const box = boxes.find((b) => b.id === boxId);
+    if (!box) return;
+
+    const endX = Math.max(0, Math.min(node.x(), currentImage.width - box.width));
+    const endY = Math.max(0, Math.min(node.y(), currentImage.height - box.height));
+    node.x(endX);
+    node.y(endY);
+
+    saveToHistory();
+    setBoxes((prev) => prev.map((b) => (b.id === boxId ? { ...b, x: endX, y: endY, updatedAt: new Date().toISOString() } : b)));
+  };
+
+  const handleTransformEnd = (event: any, boxId: string) => {
+    const node = event.target;
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
+    node.scaleX(1);
+    node.scaleY(1);
+
+    saveToHistory();
+    setBoxes((prev) =>
+      prev.map((b) =>
+        b.id === boxId
+          ? {
+              ...b,
+              x: node.x(),
+              y: node.y(),
+              width: Math.max(5, node.width() * scaleX),
+              height: Math.max(5, node.height() * scaleY),
+              updatedAt: new Date().toISOString(),
+            }
+          : b,
+      ),
+    );
+  };
+
+  const handleBoxClick = (event: any, boxId: string) => {
+    if (toolMode === "select") {
+      event.cancelBubble = true;
+      setSelectedBoxId(boxId);
+    }
+  };
+
+  const selectedBox = boxes.find((box) => box.id === selectedBoxId);
+  const selectedBoxClass = selectedBox ? activeProject.classes.find((cls) => cls.id === selectedBox.classId) : undefined;
+
   const shortcutMap = useMemo(() => {
-    const map: Record<string, (e: KeyboardEvent) => void> = {
-      "A": handlePrev,
-      "D": handleNext,
-      "S": handleSave,
-      "W": () => { setToolMode("draw"); setSelectedBoxId(undefined); },
-      "V": () => setToolMode("select"),
-      "H": () => setToolMode("pan"),
-      "Delete": () => selectedBoxId && handleDeleteBox(selectedBoxId),
-      "Backspace": () => selectedBoxId && handleDeleteBox(selectedBoxId),
-      "Escape": () => {
+    const map: Record<string, (event: KeyboardEvent) => void> = {
+      A: handlePrev,
+      D: handleNext,
+      S: handleSave,
+      W: () => {
+        setToolMode("draw");
+        setSelectedBoxId(undefined);
+      },
+      V: () => setToolMode("select"),
+      H: () => {
+        setToolMode("pan");
+        setSelectedBoxId(undefined);
+      },
+      F: fitToScreen,
+      Z: () => setScale((value) => Math.min(10, value * 1.1)),
+      X: () => setScale((value) => Math.max(0.1, value / 1.1)),
+      Delete: () => selectedBoxId && handleDeleteBox(selectedBoxId),
+      Backspace: () => selectedBoxId && handleDeleteBox(selectedBoxId),
+      Escape: () => {
         setSelectedBoxId(undefined);
         setIsDrawing(false);
       },
-      "?": () => setShowShortcuts(true)
+      "?": () => setShowShortcuts(true),
     };
 
-    project.classes.forEach((cls, idx) => {
+    activeProject.classes.forEach((cls, idx) => {
       if (idx < 9) {
         map[(idx + 1).toString()] = () => {
           setSelectedClassId(cls.id);
@@ -295,493 +468,236 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
     });
 
     return map;
-  }, [handlePrev, handleNext, handleSave, project.classes, selectedBoxId]);
+  }, [handlePrev, handleNext, handleSave, activeProject.classes, selectedBoxId, handleDeleteBox, fitToScreen]);
 
   useKeyboardShortcuts(shortcutMap, !showShortcuts);
-
-
-  const handleChangeBoxClass = (boxId: string, classId: string) => {
-    saveToHistory();
-    setBoxes(boxes.map(b => b.id === boxId ? { ...b, classId, updatedAt: new Date().toISOString() } : b));
-  };
-
-  // Canvas Interactions
-  const getMousePos = (e: any) => {
-    const stage = e.target.getStage();
-    const pointerPos = stage.getPointerPosition();
-    
-    if (!containerRef.current) return { x: 0, y: 0 };
-    const { clientWidth, clientHeight } = containerRef.current;
-    
-    const stageWidth = clientWidth;
-    const stageHeight = clientHeight;
-    
-    const imgW = currentImage.width * scale;
-    const imgH = currentImage.height * scale;
-    
-    const offsetX = (stageWidth - imgW) / 2 + stagePos.x;
-    const offsetY = (stageHeight - imgH) / 2 + stagePos.y;
-    
-    const x = (pointerPos.x - offsetX) / scale;
-    const y = (pointerPos.y - offsetY) / scale;
-    
-    return { x, y };
-  };
-
-  const handleMouseDown = (e: any) => {
-    if (e.target.getParent()?.className === 'Transformer') {
-      return;
-    }
-
-    if (toolMode === "pan") return; // Handled by konva draggable stage
-
-    if (toolMode === "select") {
-      const clickedOnEmpty = e.target === e.target.getStage() || e.target.name() === 'background-image';
-      if (clickedOnEmpty) {
-        setSelectedBoxId(undefined);
-      }
-      return;
-    }
-
-    if (toolMode === "draw") {
-      if (!selectedClassId) {
-        showToast({ type: "warning", title: "Select a Class", message: "Please select a class first to draw a bounding box." });
-        return;
-      }
-      const pos = getMousePos(e);
-      if (pos.x < 0 || pos.y < 0 || pos.x > currentImage.width || pos.y > currentImage.height) {
-        return;
-      }
-      setIsDrawing(true);
-      setNewBox({ x: pos.x, y: pos.y, width: 0, height: 0 });
-    }
-  };
-
-  const handleMouseMove = (e: any) => {
-    if (!isDrawing || !newBox) return;
-    
-    const pos = getMousePos(e);
-    
-    // Clamp to image bounds
-    let currX = Math.max(0, Math.min(pos.x, currentImage.width));
-    let currY = Math.max(0, Math.min(pos.y, currentImage.height));
-    
-    setNewBox({
-      x: newBox.x,
-      y: newBox.y,
-      width: currX - newBox.x,
-      height: currY - newBox.y
-    });
-  };
-
-  const handleMouseUp = () => {
-    if (isDrawing && newBox) {
-      setIsDrawing(false);
-      
-      // Normalize negative dimensions
-      let bx = newBox.x;
-      let by = newBox.y;
-      let bw = newBox.width;
-      let bh = newBox.height;
-
-      if (bw < 0) {
-        bx += bw;
-        bw = Math.abs(bw);
-      }
-      if (bh < 0) {
-        by += bh;
-        bh = Math.abs(bh);
-      }
-
-      setNewBox(null);
-
-      // Minimum size threshold to prevent accidental clicks
-      if (bw >= 5 && bh >= 5 && selectedClassId) {
-        saveToHistory();
-        const newAnnotation: DetectionAnnotation = {
-          id: createId("box"),
-          imageId: currentImage.id,
-          projectId: project.id,
-          classId: selectedClassId,
-          x: bx,
-          y: by,
-          width: bw,
-          height: bh,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        setBoxes([...boxes, newAnnotation]);
-        setSelectedBoxId(newAnnotation.id);
-        setToolMode("select"); // Auto switch to select mode to easily adjust
-      }
-    }
-  };
-
-  const handleDragEnd = (e: any, boxId: string) => {
-    // Transformer can mess with x, y during drag. We need to save new pos.
-    const node = e.target;
-    // node.x() and node.y() are the new values in pixel coordinates since scale is applied to parent group.
-    
-    let endX = node.x();
-    let endY = node.y();
-    
-    // clamp bounds
-    const box = boxes.find(b => b.id === boxId);
-    if (!box) return;
-    
-    endX = Math.max(0, Math.min(endX, currentImage.width - box.width));
-    endY = Math.max(0, Math.min(endY, currentImage.height - box.height));
-    
-    node.x(endX);
-    node.y(endY);
-
-    saveToHistory();
-    setBoxes(boxes.map(b => b.id === boxId ? { ...b, x: endX, y: endY, updatedAt: new Date().toISOString() } : b));
-  };
-
-  const handleTransformEnd = (e: any, boxId: string) => {
-    const node = e.target;
-    const scaleX = node.scaleX();
-    const scaleY = node.scaleY();
-
-    node.scaleX(1);
-    node.scaleY(1);
-
-    const newX = node.x();
-    const newY = node.y();
-    let newWidth = Math.max(5, node.width() * scaleX);
-    let newHeight = Math.max(5, node.height() * scaleY);
-    
-    // Additional boundary restrictions could be applied here
-    saveToHistory();
-    setBoxes(boxes.map(b => b.id === boxId ? { 
-      ...b, 
-      x: newX, 
-      y: newY, 
-      width: newWidth, 
-      height: newHeight,
-      updatedAt: new Date().toISOString() 
-    } : b));
-  };
-
-  const handleBoxClick = (e: any, boxId: string) => {
-    if (toolMode === "select") {
-      e.cancelBubble = true;
-      setSelectedBoxId(boxId);
-    }
-  };
 
   if (!currentImage) return null;
 
   const stageWidth = containerRef.current?.clientWidth || window.innerWidth / 2;
   const stageHeight = containerRef.current?.clientHeight || window.innerHeight / 2;
-  
-  const imgW = currentImage.width * scale;
-  const imgH = currentImage.height * scale;
-  const offsetX = (stageWidth - imgW) / 2;
-  const offsetY = (stageHeight - imgH) / 2;
-
-  // Change cursor depending on state
-  let cursorClass = "cursor-default";
-  if (toolMode === "draw") cursorClass = "cursor-crosshair";
-  if (toolMode === "pan") cursorClass = "cursor-grab";
+  const cursorClass = toolMode === "draw" ? "cursor-crosshair" : toolMode === "pan" ? "cursor-grab" : "cursor-default";
 
   return (
-    <div className="flex flex-col h-full bg-zinc-950 text-zinc-100 overflow-hidden">
-      {/* Top Bar */}
-      <div className="h-14 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between px-4 shrink-0">
-        <button 
-          onClick={handleBackToProject}
-          className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors text-sm font-medium"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Project
-        </button>
-        
-        {/* Toolbar */}
-        <div className="flex flex-1 justify-center px-4">
-          <div className="flex items-center bg-zinc-800/80 p-1 rounded-lg gap-1 border border-zinc-700/50">
-            <button
-              onClick={() => { setToolMode("draw"); setSelectedBoxId(undefined); }}
-              className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-sm font-medium transition-colors ${
-                toolMode === "draw" ? "bg-yellow-500 text-zinc-900 shadow-sm" : "text-zinc-400 hover:text-white hover:bg-zinc-700"
-              }`}
-              title="Draw Box (W)"
-            >
-              <Square className="w-4 h-4" />
-              Draw
+    <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-app-bg text-slate-100">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-700/40 bg-slate-950/70 px-4 backdrop-blur-xl">
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={handleBackToProject}
+            className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            {activeProject.name}
+          </button>
+          <div className="hidden h-7 w-px bg-slate-700/60 lg:block" />
+          <div className="hidden items-center gap-2 rounded-xl border border-slate-700/50 bg-slate-950/70 px-3 py-2 text-sm font-bold text-white lg:flex">
+            <button type="button" onClick={handlePrev} disabled={currentIndex === 0} className="text-slate-400 hover:text-white disabled:opacity-30">
+              <ChevronLeft className="h-4 w-4" />
             </button>
-            <button
-              onClick={() => setToolMode("select")}
-              className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-sm font-medium transition-colors ${
-                toolMode === "select" ? "bg-yellow-500 text-zinc-900 shadow-sm" : "text-zinc-400 hover:text-white hover:bg-zinc-700"
-              }`}
-              title="Select Box (V)"
-            >
-              <MousePointer2 className="w-4 h-4" />
-              Select
-            </button>
-            <button
-              onClick={() => { setToolMode("pan"); setSelectedBoxId(undefined); }}
-              className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-sm font-medium transition-colors ${
-                toolMode === "pan" ? "bg-yellow-500 text-zinc-900 shadow-sm" : "text-zinc-400 hover:text-white hover:bg-zinc-700"
-              }`}
-              title="Pan Stage (H)"
-            >
-              <Hand className="w-4 h-4" />
-              Pan
-            </button>
-            <div className="w-px h-5 bg-zinc-700 mx-1"></div>
-            <button onClick={() => setScale(s => s * 1.1)} className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-md" title="Zoom In">
-              <ZoomIn className="w-4 h-4" />
-            </button>
-            <span className="text-xs font-mono text-zinc-500 w-10 text-center">{Math.round(scale * 100)}%</span>
-            <button onClick={() => setScale(s => s / 1.1)} className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-md" title="Zoom Out">
-              <ZoomOut className="w-4 h-4" />
-            </button>
-            <button onClick={fitToScreen} className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-md" title="Fit to Screen">
-              <Maximize className="w-4 h-4" />
+            <span>{currentIndex + 1} / {images.length}</span>
+            <button type="button" onClick={handleNext} disabled={currentIndex === images.length - 1} className="text-slate-400 hover:text-white disabled:opacity-30">
+              <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={handlePrev} 
-              disabled={currentIndex === 0}
-              className="p-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-30 disabled:hover:bg-zinc-800 transition-colors"
-              title="Previous Image (A)"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <span className="text-zinc-500 text-sm w-16 text-center">
-              {currentIndex + 1} / {images.length}
-            </span>
-            <button 
-              onClick={handleNext} 
-              disabled={currentIndex === images.length - 1}
-              className="p-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-30 disabled:hover:bg-zinc-800 transition-colors"
-              title="Next Image (D)"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="w-px h-6 bg-zinc-800"></div>
-
-          <div className="flex items-center gap-2">
-            <button
-               onClick={() => setShowShortcuts(true)}
-               className="p-1.5 text-zinc-400 hover:text-white transition-colors rounded-md hover:bg-zinc-800"
-               title="Keyboard Shortcuts (?)"
-            >
-              <Keyboard className="w-4 h-4" />
-            </button>
-
-            <Button
-              onClick={handleSave}
-              disabled={!isDirty || isSaving}
-              isLoading={isSaving}
-              leftIcon={<Save className="w-4 h-4" />}
-              className="bg-yellow-500 hover:bg-yellow-400 text-zinc-900 border-transparent shadow shadow-yellow-500/10"
-              title="Save Annotation (S)"
-            >
-              Save
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content Workspace */}
-      <div className="flex flex-1 min-h-0">
-        {/* Left Sidebar */}
-        <ImageSidebar 
-          images={images} 
-          currentImageId={currentImage.id} 
-          onSelectImage={handleSelectImage} 
+        <AnnotationToolbar
+          toolMode={toolMode}
+          scale={scale}
+          canUndo={history.length > 0}
+          canRedo={redoStack.length > 0}
+          canDelete={Boolean(selectedBoxId)}
+          onSetToolMode={(mode) => {
+            setToolMode(mode);
+            if (mode !== "select") setSelectedBoxId(undefined);
+          }}
+          onZoomIn={() => setScale((value) => Math.min(10, value * 1.1))}
+          onZoomOut={() => setScale((value) => Math.max(0.1, value / 1.1))}
+          onFit={fitToScreen}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onDelete={() => selectedBoxId && handleDeleteBox(selectedBoxId)}
         />
 
-        {/* Center Viewer & Canvas */}
-        <div className="flex-1 flex flex-col bg-zinc-950 p-6 relative">
-          <div className="flex justify-between items-center mb-4 shrink-0">
-            <div>
-              <h2 className="text-lg font-medium text-white">{currentImage.name}</h2>
-              <p className="text-sm text-zinc-500">{currentImage.width} × {currentImage.height} px</p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowShortcuts(true)}
+            className="rounded-lg border border-white/10 bg-white/5 p-2 text-slate-400 hover:text-white"
+            title="Keyboard Shortcuts (?)"
+          >
+            <Keyboard className="h-4 w-4" />
+          </button>
+          <Button
+            onClick={handleSave}
+            disabled={!isDirty || isSaving}
+            isLoading={isSaving}
+            leftIcon={<Save className="h-4 w-4" />}
+            title="Save Annotation (S)"
+          >
+            Kaydet & Sonraki
+          </Button>
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+        <ImageSidebar images={images} currentImageId={currentImage.id} onSelectImage={handleSelectImage} />
+
+        <main className="relative flex min-w-0 flex-1 flex-col bg-slate-950/35">
+          <div className="flex items-center justify-between border-b border-slate-700/30 px-5 py-3">
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-bold text-white">{currentImage.name}</h2>
+              <p className="text-xs text-slate-500">
+                {currentImage.width}x{currentImage.height}px · {boxes.length} box
+              </p>
             </div>
             {isDirty && (
-              <div className="flex items-center gap-1.5 text-amber-500 text-sm font-medium bg-amber-500/10 px-3 py-1 rounded-lg border border-amber-500/20 shadow-sm shadow-amber-500/10">
-                <AlertTriangle className="w-4 h-4" />
-                Unsaved changes
+              <div className="flex items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200">
+                <AlertTriangle className="h-4 w-4" />
+                Kaydedilmemis degisiklikler
               </div>
             )}
           </div>
-          <div 
-            className={`flex-1 min-h-0 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden ${cursorClass}`}
-            ref={containerRef}
-          >
-            {/* Konva Canvas */}
-            <Stage 
-              width={stageWidth} 
-              height={stageHeight}
+
+          <div ref={containerRef} className="min-h-0 flex-1 p-4">
+            <DetectionCanvas
+              project={activeProject}
+              currentImage={currentImage}
+              konvaImage={konvaImage || undefined}
+              boxes={boxes}
+              selectedBoxId={selectedBoxId}
+              selectedClassId={selectedClassId}
+              toolMode={toolMode}
+              scale={scale}
+              stagePos={stagePos}
+              transformerRef={transformerRef}
+              isDrawing={isDrawing}
+              newBox={newBox}
+              cursorClass={cursorClass}
+              stageWidth={stageWidth}
+              stageHeight={stageHeight}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
               onWheel={handleWheel}
-              draggable={toolMode === "pan"}
-              x={stagePos.x}
-              y={stagePos.y}
-              onDragEnd={(e) => {
-                if (e.target === e.target.getStage()) {
-                  setStagePos({ x: e.target.x(), y: e.target.y() });
-                }
-              }}
-            >
-              <Layer>
-                <Group x={offsetX} y={offsetY} scaleX={scale} scaleY={scale}>
-                  <KonvaImage 
-                    image={konvaImage} 
-                    width={currentImage.width} 
-                    height={currentImage.height}
-                    name="background-image"
-                  />
-                  
-                  {/* Render existing boxes */}
-                  {boxes.map((box) => {
-                    const boxClass = project.classes.find(c => c.id === box.classId);
-                    const color = boxClass?.color || "#eab308";
-                    const isSelected = box.id === selectedBoxId;
-                    return (
-                      <Rect
-                        key={box.id}
-                        id={box.id}
-                        x={box.x}
-                        y={box.y}
-                        width={box.width}
-                        height={box.height}
-                        stroke={color}
-                        strokeWidth={isSelected ? 3 / scale : 2 / scale}
-                        fill={color + "33"} // 20% opacity using hex
-                        draggable={toolMode === "select" && isSelected}
-                        onClick={(e) => handleBoxClick(e, box.id)}
-                        onDragEnd={(e) => handleDragEnd(e, box.id)}
-                        onTransformEnd={(e) => handleTransformEnd(e, box.id)}
-                      />
-                    );
-                  })}
-                  
-                  {/* Render drawing box */}
-                  {isDrawing && newBox && (
-                    <Rect
-                      x={newBox.x < 0 ? newBox.x + newBox.width : newBox.x}
-                      y={newBox.y < 0 ? newBox.y + newBox.height : newBox.y}
-                      width={Math.abs(newBox.width)}
-                      height={Math.abs(newBox.height)}
-                      stroke={project.classes.find(c => c.id === selectedClassId)?.color || "#eab308"}
-                      strokeWidth={2 / scale}
-                      fill={(project.classes.find(c => c.id === selectedClassId)?.color || "#eab308") + "33"}
-                    />
-                  )}
-                  
-                  {/* Transformer attached dynamically */}
-                  <Transformer
-                    ref={transformerRef}
-                    boundBoxFunc={(oldBox, newBox) => {
-                      // limit resize
-                      if (newBox.width < 5 || newBox.height < 5) {
-                        return oldBox;
-                      }
-                      return newBox;
-                    }}
-                    rotateEnabled={false}
-                    ignoreStroke={true}
-                    enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'top-center', 'bottom-center', 'middle-left', 'middle-right']}
-                    anchorSize={8 / scale}
-                    borderStroke="#ffffff"
-                    borderStrokeWidth={1 / scale}
-                    anchorStroke="#ffffff"
-                    anchorFill="#eab308"
-                  />
-                </Group>
-              </Layer>
-            </Stage>
+              onStageDragEnd={setStagePos}
+              onBoxClick={handleBoxClick}
+              onBoxDragEnd={handleDragEnd}
+              onBoxTransformEnd={handleTransformEnd}
+            />
           </div>
-        </div>
 
-        {/* Right Sidebar */}
-        <div className="w-72 flex flex-col border-l border-zinc-800 bg-zinc-900">
-           <div className="h-1/2 flex flex-col">
-             <ClassPanel 
-                classes={project.classes} 
-                selectedClassId={selectedClassId}
-                onSelectClass={(id) => {
-                  setSelectedClassId(id);
-                  if (toolMode !== "draw") {
-                    setToolMode("draw");
-                    setSelectedBoxId(undefined);
-                  }
-                }}
-              />
-           </div>
-           <div className="h-1/2 flex flex-col border-t border-zinc-800">
-              <DetectionAnnotationList
-                boxes={boxes}
-                classes={project.classes}
-                selectedBoxId={selectedBoxId}
-                onSelectBox={(id) => {
-                  setToolMode("select");
-                  setSelectedBoxId(id);
-                }}
-                onDeleteBox={handleDeleteBox}
-                onChangeBoxClass={handleChangeBoxClass}
-              />
-           </div>
-        </div>
+          <div className="pointer-events-none absolute bottom-7 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-slate-700/60 bg-slate-950/80 p-2 shadow-2xl shadow-black/30 backdrop-blur-xl">
+            <button type="button" onClick={() => setScale((value) => Math.max(0.1, value / 1.1))} className="pointer-events-auto rounded-lg p-2 text-slate-300 hover:bg-white/10">
+              <ZoomOut className="h-4 w-4" />
+            </button>
+            <span className="min-w-16 text-center font-mono text-xs font-bold text-white">{Math.round(scale * 100)}%</span>
+            <button type="button" onClick={() => setScale((value) => Math.min(10, value * 1.1))} className="pointer-events-auto rounded-lg p-2 text-slate-300 hover:bg-white/10">
+              <ZoomIn className="h-4 w-4" />
+            </button>
+            <button type="button" onClick={fitToScreen} className="pointer-events-auto rounded-lg px-3 py-2 text-xs font-bold text-slate-300 hover:bg-white/10">
+              Fit
+            </button>
+          </div>
+        </main>
+
+        <aside className="flex h-full w-[420px] shrink-0 border-l border-slate-700/40 bg-slate-950/55 backdrop-blur-xl">
+          <div className="flex min-w-0 flex-1 flex-col border-r border-slate-700/40">
+            <ClassPanel
+              classes={activeProject.classes}
+              selectedClassId={selectedClassId}
+              onAddClass={handleAddClass}
+              onDeleteClass={handleDeleteClass}
+              onSelectClass={(id) => {
+                setSelectedClassId(id);
+                setToolMode("draw");
+                setSelectedBoxId(undefined);
+              }}
+              className="min-h-[38%] border-b border-slate-700/40"
+              compact
+            />
+            <DetectionAnnotationList
+              boxes={boxes}
+              classes={activeProject.classes}
+              selectedBoxId={selectedBoxId}
+              onSelectBox={(id) => {
+                setToolMode("select");
+                setSelectedBoxId(id);
+              }}
+              onDeleteBox={handleDeleteBox}
+              onChangeBoxClass={handleChangeBoxClass}
+            />
+          </div>
+
+          <div className="hidden w-[180px] flex-col p-3 xl:flex">
+            <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
+              <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Secili Annotation</h3>
+              {selectedBox ? (
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <p className="text-slate-500">Sinif</p>
+                    <p className="mt-1 font-bold text-white">{selectedBoxClass?.name || "Unknown"}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 font-mono text-slate-300">
+                    <Metric label="x" value={selectedBox.x} />
+                    <Metric label="y" value={selectedBox.y} />
+                    <Metric label="w" value={selectedBox.width} />
+                    <Metric label="h" value={selectedBox.height} />
+                  </div>
+                  <Button variant="danger" size="sm" onClick={() => handleDeleteBox(selectedBox.id)}>
+                    Sil
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs leading-5 text-slate-500">Bir kutu secildiginde koordinatlar burada gorunur.</p>
+              )}
+            </div>
+
+            <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.035] p-3">
+              <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Klavye Kisayollari</h3>
+              <Shortcut k="W" label="Kutu ciz" />
+              <Shortcut k="V" label="Secim modu" />
+              <Shortcut k="H" label="Tasima modu" />
+              <Shortcut k="S" label="Kaydet" />
+              <Shortcut k="Del" label="Sil" />
+            </div>
+          </div>
+        </aside>
       </div>
 
       <Modal isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} title="YOLO Shortcuts">
-         <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-y-2">
-              <div className="text-zinc-400">Previous / Next Image</div>
-              <div className="flex items-center justify-end gap-2">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">A</kbd> / <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">D</kbd>
-              </div>
-              <div className="text-zinc-400">Save Annotation</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">S</kbd>
-              </div>
-              <div className="text-zinc-400">Select Tool</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">V</kbd>
-              </div>
-              <div className="text-zinc-400">Draw Tool</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">W</kbd>
-              </div>
-              <div className="text-zinc-400">Pan Tool</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">H</kbd>
-              </div>
-              <div className="text-zinc-400">Delete Box</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">Del</kbd>
-              </div>
-              <div className="text-zinc-400">Select Class</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">1-9</kbd>
-              </div>
-              <div className="text-zinc-400">Undo / Redo</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">Ctrl+Z / Y</kbd>
-              </div>
-              <div className="text-zinc-400">Clear Selection</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">ESC</kbd>
-              </div>
-            </div>
-         </div>
+        <div className="grid grid-cols-2 gap-y-2 text-sm">
+          <Shortcut k="A / D" label="Onceki / Sonraki gorsel" />
+          <Shortcut k="S" label="Kaydet ve sonraki" />
+          <Shortcut k="W" label="Kutu ciz" />
+          <Shortcut k="V" label="Secim modu" />
+          <Shortcut k="H" label="Tasima modu" />
+          <Shortcut k="1-9" label="Sinif sec" />
+          <Shortcut k="Ctrl+Z / Y" label="Geri / ileri al" />
+          <Shortcut k="Esc" label="Secimi temizle" />
+        </div>
       </Modal>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md bg-slate-950/70 p-2">
+      <p className="text-[10px] text-slate-500">{label}</p>
+      <p className="text-xs font-bold text-white">{Math.round(value)}</p>
+    </div>
+  );
+}
+
+function Shortcut({ k, label }: { k: string; label: string }) {
+  return (
+    <div className="mb-2 flex items-center justify-between gap-3 text-xs text-slate-400">
+      <span>{label}</span>
+      <kbd className="rounded border border-white/10 bg-slate-950 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-200">
+        {k}
+      </kbd>
     </div>
   );
 }

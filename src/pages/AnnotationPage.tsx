@@ -32,7 +32,7 @@ export function AnnotationPage() {
   if (loading) {
     return (
       <div className="flex-1 flex justify-center items-center">
-        <div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
@@ -42,11 +42,11 @@ export function AnnotationPage() {
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
         <h2 className="text-2xl font-bold text-white mb-4">Project not found</h2>
         <button 
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/projects")}
           className="inline-flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
-          Back to Dashboard
+          Back to Projects
         </button>
       </div>
     );
@@ -59,7 +59,7 @@ export function AnnotationPage() {
         <p className="text-zinc-400 mb-6">Upload images first to start annotating.</p>
         <button 
           onClick={() => navigate(`/projects/${project.id}`)}
-          className="inline-flex items-center gap-2 bg-yellow-500 hover:bg-yellow-400 text-zinc-900 px-6 py-3 rounded-lg font-semibold transition-colors"
+          className="theme-on-accent inline-flex items-center gap-2 bg-gradient-to-r from-violet-600 to-blue-500 hover:from-violet-500 hover:to-blue-400 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
           Back to Project

@@ -1,12 +1,20 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, CheckCircle2, Keyboard, Save } from "lucide-react";
 import { Project } from "../../types/project";
 import { ImageItem } from "../../types/image";
 import { ImageSidebar } from "./ImageSidebar";
 import { ClassPanel } from "./ClassPanel";
-import { ArrowLeft, Save, ChevronLeft, ChevronRight, AlertTriangle, Keyboard } from "lucide-react";
-import { getClassificationAnnotationByImageId, upsertClassificationAnnotation } from "../../storage/annotationStorage";
+import {
+  deleteClassificationAnnotationsByClassId,
+  getClassificationAnnotationByImageId,
+  getClassificationAnnotationsByProjectId,
+  upsertClassificationAnnotation,
+} from "../../storage/annotationStorage";
 import { updateImageStatus } from "../../storage/imageStorage";
+import { updateProject } from "../../storage/projectStorage";
+import { createId } from "../../utils/id";
+import { getClassColor } from "../../utils/classColor";
 import { useConfirm } from "../../context/ConfirmContext";
 import { useToast } from "../../context/ToastContext";
 import { Modal } from "../ui/Modal";
@@ -20,20 +28,19 @@ interface ClassificationAnnotatorProps {
 
 export function ClassificationAnnotator({ project, initialImages }: ClassificationAnnotatorProps) {
   const navigate = useNavigate();
+  const [activeProject, setActiveProject] = useState<Project>(project);
   const [images, setImages] = useState<ImageItem[]>(initialImages);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedClassId, setSelectedClassId] = useState<string | undefined>(undefined);
-  const [savedClassId, setSavedClassId] = useState<string | undefined>(undefined);
+  const [selectedClassId, setSelectedClassId] = useState<string | undefined>();
+  const [savedClassId, setSavedClassId] = useState<string | undefined>();
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const { confirm } = useConfirm();
   const { showToast } = useToast();
-
   const currentImage = images[currentIndex];
   const isDirty = selectedClassId !== savedClassId;
-
-  // Track if saving to prevent multiple clicks
-  const [isSaving, setIsSaving] = useState(false);
+  const selectedClass = activeProject.classes.find((cls) => cls.id === selectedClassId);
 
   useEffect(() => {
     if (currentImage) {
@@ -49,7 +56,7 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
         title: "Unsaved Changes",
         message: "You have unsaved changes. Do you want to continue without saving?",
         confirmLabel: "Discard Changes",
-        variant: "danger"
+        variant: "danger",
       });
       if (!isConfirmed) return;
     }
@@ -57,25 +64,20 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
   };
 
   const handleSelectImage = (imageId: string) => {
-    const idx = images.findIndex(img => img.id === imageId);
-    if (idx !== -1 && idx !== currentIndex) {
-      requestImageChange(idx);
-    }
+    const idx = images.findIndex((img) => img.id === imageId);
+    if (idx !== -1 && idx !== currentIndex) requestImageChange(idx);
   };
 
   const handlePrev = useCallback(() => {
-    if (currentIndex > 0) {
-      requestImageChange(currentIndex - 1);
-    }
-  }, [currentIndex, isDirty, confirm]);
+    if (currentIndex > 0) requestImageChange(currentIndex - 1);
+  }, [currentIndex, isDirty]);
 
   const handleNext = useCallback(() => {
-    if (currentIndex < images.length - 1) {
-      requestImageChange(currentIndex + 1);
-    }
-  }, [currentIndex, images.length, isDirty, confirm]);
+    if (currentIndex < images.length - 1) requestImageChange(currentIndex + 1);
+  }, [currentIndex, images.length, isDirty]);
 
   const handleSave = useCallback(() => {
+    if (!currentImage) return;
     if (!selectedClassId) {
       showToast({ type: "warning", title: "No Class Selected", message: "Please select a class before saving." });
       return;
@@ -83,39 +85,28 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
     if (!isDirty) return;
 
     setIsSaving(true);
-    
-    // Tiny delay to show saving state and batch updates if possible
     setTimeout(async () => {
       try {
         upsertClassificationAnnotation({
           imageId: currentImage.id,
-          projectId: project.id,
+          projectId: activeProject.id,
           classId: selectedClassId,
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
         });
 
         await updateImageStatus(currentImage.id, "labeled");
         setSavedClassId(selectedClassId);
-        
-        setImages(prev => prev.map(img => 
-          img.id === currentImage.id ? { ...img, status: "labeled" } : img
-        ));
-
+        setImages((prev) => prev.map((img) => (img.id === currentImage.id ? { ...img, status: "labeled" } : img)));
         showToast({ type: "success", title: "Saved", message: "Annotation saved successfully.", duration: 2000 });
-      } catch (err) {
+      } catch {
         showToast({ type: "error", title: "Error", message: "Failed to save annotation." });
       } finally {
         setIsSaving(false);
-        
-        // Auto move to next image
-        if (currentIndex < images.length - 1) {
-          setCurrentIndex(currentIndex + 1);
-        }
+        if (currentIndex < images.length - 1) setCurrentIndex(currentIndex + 1);
       }
     }, 100);
-    
-  }, [selectedClassId, isDirty, currentImage, project.id, currentIndex, images.length, showToast]);
+  }, [selectedClassId, isDirty, currentImage, activeProject.id, currentIndex, images.length, showToast]);
 
   const handleBackToProject = async () => {
     if (isDirty) {
@@ -123,165 +114,216 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
         title: "Unsaved Changes",
         message: "You have unsaved changes. Return to project without saving?",
         confirmLabel: "Discard Changes",
-        variant: "danger"
+        variant: "danger",
       });
       if (!isConfirmed) return;
     }
-    navigate(`/projects/${project.id}`);
+    navigate(`/projects/${activeProject.id}`);
   };
 
-  // Keyboard Shortcuts
+  const handleAddClass = (className: string) => {
+    const trimmedName = className.trim();
+    if (!trimmedName) return false;
+
+    if (activeProject.classes.some(cls => cls.name.toLowerCase() === trimmedName.toLowerCase())) {
+      showToast({ type: "warning", title: "Class exists", message: `"${trimmedName}" is already in this project.` });
+      return false;
+    }
+
+    const newClass = {
+      id: createId("class"),
+      name: trimmedName,
+      color: getClassColor(trimmedName, activeProject.classes.length),
+    };
+    const updatedProject = { ...activeProject, classes: [...activeProject.classes, newClass] };
+
+    updateProject(updatedProject);
+    setActiveProject(updatedProject);
+    setSelectedClassId(newClass.id);
+    showToast({ type: "success", title: "Class added", message: `"${trimmedName}" is ready to use.` });
+    return true;
+  };
+
+  const handleDeleteClass = async (classId: string) => {
+    const targetClass = activeProject.classes.find(cls => cls.id === classId);
+    if (!targetClass) return;
+
+    const affectedImageIds = new Set(
+      getClassificationAnnotationsByProjectId(activeProject.id)
+        .filter(annotation => annotation.classId === classId)
+        .map(annotation => annotation.imageId),
+    );
+
+    const confirmed = await confirm({
+      title: "Delete Class",
+      message: `Delete "${targetClass.name}"? Existing image labels using this class will also be removed.`,
+      confirmLabel: "Delete Class",
+      variant: "danger",
+    });
+    if (!confirmed) return;
+
+    const updatedProject = {
+      ...activeProject,
+      classes: activeProject.classes.filter(cls => cls.id !== classId),
+    };
+
+    deleteClassificationAnnotationsByClassId(activeProject.id, classId);
+    updateProject(updatedProject);
+    await Promise.all(Array.from(affectedImageIds).map(imageId => updateImageStatus(imageId, "unlabeled")));
+
+    setActiveProject(updatedProject);
+    setImages(prev => prev.map(img => affectedImageIds.has(img.id) ? { ...img, status: "unlabeled" } : img));
+    if (selectedClassId === classId) setSelectedClassId(undefined);
+    if (savedClassId === classId) setSavedClassId(undefined);
+
+    showToast({
+      type: "info",
+      title: "Class deleted",
+      message: affectedImageIds.size > 0
+        ? `"${targetClass.name}" and ${affectedImageIds.size} labels were removed.`
+        : `"${targetClass.name}" was removed.`,
+    });
+  };
+
   const shortcutMap = useMemo(() => {
-    const map: Record<string, (e: KeyboardEvent) => void> = {
-      "A": handlePrev,
-      "D": handleNext,
-      "S": handleSave,
-      "Escape": () => setSelectedClassId(undefined),
+    const map: Record<string, (event: KeyboardEvent) => void> = {
+      A: handlePrev,
+      D: handleNext,
+      S: handleSave,
+      Escape: () => setSelectedClassId(undefined),
       "?": () => setShowShortcuts(true),
     };
 
-    project.classes.forEach((cls, idx) => {
-      if (idx < 9) {
-        map[(idx + 1).toString()] = () => setSelectedClassId(cls.id);
-      }
+    activeProject.classes.forEach((cls, idx) => {
+      if (idx < 9) map[(idx + 1).toString()] = () => setSelectedClassId(cls.id);
     });
 
     return map;
-  }, [handlePrev, handleNext, handleSave, project.classes]);
+  }, [handlePrev, handleNext, handleSave, activeProject.classes]);
 
   useKeyboardShortcuts(shortcutMap, !showShortcuts);
 
   if (!currentImage) return null;
 
   return (
-    <div className="flex flex-col h-full bg-zinc-950 text-zinc-100 overflow-hidden">
-      {/* Top Bar */}
-      <div className="h-14 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between px-4 shrink-0">
-        <button 
+    <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-app-bg text-slate-100">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-700/40 bg-slate-950/70 px-4 backdrop-blur-xl">
+        <button
+          type="button"
           onClick={handleBackToProject}
-          className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors text-sm font-medium"
+          className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-white"
         >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Project
+          <ArrowLeft className="h-4 w-4" />
+          {activeProject.name}
         </button>
 
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={handlePrev} 
-              disabled={currentIndex === 0}
-              className="p-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-30 disabled:hover:bg-zinc-800 transition-colors"
-              title="Previous Image (A)"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <span className="text-zinc-500 text-sm w-16 text-center">
-              {currentIndex + 1} / {images.length}
-            </span>
-            <button 
-              onClick={handleNext} 
-              disabled={currentIndex === images.length - 1}
-              className="p-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-30 disabled:hover:bg-zinc-800 transition-colors"
-              title="Next Image (D)"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="w-px h-6 bg-zinc-800"></div>
-
-          <div className="flex items-center gap-2">
-            <button
-               onClick={() => setShowShortcuts(true)}
-               className="p-1.5 text-zinc-400 hover:text-white transition-colors rounded-md hover:bg-zinc-800"
-               title="Keyboard Shortcuts (?)"
-            >
-              <Keyboard className="w-4 h-4" />
-            </button>
-
-            <Button
-              onClick={handleSave}
-              disabled={!selectedClassId || !isDirty || isSaving}
-              isLoading={isSaving}
-              leftIcon={<Save className="w-4 h-4" />}
-              className="bg-yellow-500 hover:bg-yellow-400 text-zinc-900 border-transparent shadow shadow-yellow-500/10"
-              title="Save Annotation (S)"
-            >
-              Save
-            </Button>
-          </div>
+        <div className="flex items-center gap-2 rounded-xl border border-slate-700/50 bg-slate-950/70 px-3 py-2 text-sm font-bold text-white">
+          <button type="button" onClick={handlePrev} disabled={currentIndex === 0} className="text-slate-400 hover:text-white disabled:opacity-30">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span>{currentIndex + 1} / {images.length}</span>
+          <button type="button" onClick={handleNext} disabled={currentIndex === images.length - 1} className="text-slate-400 hover:text-white disabled:opacity-30">
+            <ChevronRight className="h-4 w-4" />
+          </button>
         </div>
-      </div>
 
-      {/* Main Content Workspace */}
-      <div className="flex flex-1 min-h-0">
-        <ImageSidebar 
-          images={images} 
-          currentImageId={currentImage.id} 
-          onSelectImage={handleSelectImage} 
-        />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowShortcuts(true)}
+            className="rounded-lg border border-white/10 bg-white/5 p-2 text-slate-400 hover:text-white"
+            title="Keyboard Shortcuts (?)"
+          >
+            <Keyboard className="h-4 w-4" />
+          </button>
+          <Button
+            onClick={handleSave}
+            disabled={!selectedClassId || !isDirty || isSaving}
+            isLoading={isSaving}
+            leftIcon={<Save className="h-4 w-4" />}
+          >
+            Kaydet & Sonraki
+          </Button>
+        </div>
+      </header>
 
-        <div className="flex-1 flex flex-col bg-zinc-950 p-6 relative">
-          <div className="flex justify-between items-center mb-4 shrink-0 transition-opacity">
-            <div>
-              <h2 className="text-lg font-medium text-white">{currentImage.name}</h2>
-              <p className="text-sm text-zinc-500">{currentImage.width} × {currentImage.height} px</p>
+      <div className="flex min-h-0 flex-1">
+        <ImageSidebar images={images} currentImageId={currentImage.id} onSelectImage={handleSelectImage} />
+
+        <main className="flex min-w-0 flex-1 flex-col bg-slate-950/35 p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-bold text-white">{currentImage.name}</h2>
+              <p className="text-xs text-slate-500">
+                {currentImage.width}x{currentImage.height}px · classification
+              </p>
             </div>
-            {isDirty && (
-              <div className="flex items-center gap-1.5 text-amber-500 text-sm font-medium bg-amber-500/10 px-3 py-1 rounded-lg border border-amber-500/20 animate-in fade-in zoom-in-95 duration-200">
-                <AlertTriangle className="w-4 h-4" />
-                Unsaved changes
-              </div>
-            )}
-            {!isDirty && savedClassId && (
-              <div className="flex items-center gap-1.5 text-emerald-500 text-sm font-medium bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20 transition-all">
-                 Saved
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              {isDirty && (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200">
+                  <AlertTriangle className="h-4 w-4" />
+                  Kaydedilmemis degisiklikler
+                </div>
+              )}
+              {!isDirty && savedClassId && (
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Kaydedildi
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex-1 min-h-0 bg-zinc-900 rounded-xl border border-zinc-800 flex items-center justify-center p-4">
-             <img 
-              key={currentImage.id} // Re-render image nicely on change
-              src={currentImage.dataUrl} 
-              alt={currentImage.name} 
-              className="max-w-full max-h-full object-contain rounded-md animate-in fade-in duration-300" 
+
+          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl border border-slate-700/50 bg-slate-950">
+            <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(148,163,184,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,.18)_1px,transparent_1px)] [background-size:32px_32px]" />
+            <img
+              key={currentImage.id}
+              src={currentImage.dataUrl}
+              alt={currentImage.name}
+              className="relative max-h-full max-w-full rounded-lg object-contain shadow-2xl shadow-black/40"
             />
           </div>
-        </div>
+        </main>
 
-        <ClassPanel 
-          classes={project.classes} 
-          selectedClassId={selectedClassId}
-          onSelectClass={setSelectedClassId}
-        />
+        <aside className="flex h-full w-[360px] shrink-0 flex-col border-l border-slate-700/40 bg-slate-950/55 backdrop-blur-xl">
+          <ClassPanel
+            classes={activeProject.classes}
+            selectedClassId={selectedClassId}
+            onSelectClass={setSelectedClassId}
+            onAddClass={handleAddClass}
+            onDeleteClass={handleDeleteClass}
+            className="min-h-0 flex-1"
+          />
+          <div className="border-t border-slate-700/40 p-4">
+            <div className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Secili sinif</h3>
+              <p className="mt-2 text-lg font-bold text-white">{selectedClass?.name || "Sinif secilmedi"}</p>
+              <p className="mt-2 text-xs leading-5 text-slate-500">1-9 kisayollariyla sinif sec, S ile kaydet ve sonraki gorsele gec.</p>
+            </div>
+          </div>
+        </aside>
       </div>
 
       <Modal isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} title="Keyboard Shortcuts">
-         <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-y-2">
-              <div className="text-zinc-400">Previous Image</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">A</kbd>
-              </div>
-              <div className="text-zinc-400">Next Image</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">D</kbd>
-              </div>
-              <div className="text-zinc-400">Save Annotation</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">S</kbd>
-              </div>
-              <div className="text-zinc-400">Select Class</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">1-9</kbd>
-              </div>
-              <div className="text-zinc-400">Clear Selection</div>
-              <div className="flex items-center justify-end">
-                <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white">ESC</kbd>
-              </div>
-            </div>
-         </div>
+        <div className="grid grid-cols-2 gap-y-2 text-sm">
+          <Shortcut k="A" label="Onceki gorsel" />
+          <Shortcut k="D" label="Sonraki gorsel" />
+          <Shortcut k="S" label="Kaydet" />
+          <Shortcut k="1-9" label="Sinif sec" />
+          <Shortcut k="Esc" label="Secimi temizle" />
+        </div>
       </Modal>
+    </div>
+  );
+}
+
+function Shortcut({ k, label }: { k: string; label: string }) {
+  return (
+    <div className="mb-2 flex items-center justify-between gap-3 text-xs text-slate-400">
+      <span>{label}</span>
+      <kbd className="rounded border border-white/10 bg-slate-950 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-200">
+        {k}
+      </kbd>
     </div>
   );
 }

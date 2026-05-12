@@ -38,13 +38,13 @@ export function ConfirmDialog({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
-        className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm shadow-2xl scale-100 animate-in zoom-in-95 duration-200"
+        className="studio-surface rounded-xl w-full max-w-sm shadow-2xl scale-100 animate-in zoom-in-95 duration-200"
       >
         <div className="p-6">
           <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
-          <p className="text-zinc-400 text-sm leading-relaxed mb-6">{message}</p>
+          <p className="text-slate-400 text-sm leading-relaxed mb-6">{message}</p>
           
           <div className="flex items-center justify-end gap-3">
             <Button variant="ghost" onClick={onCancel}>

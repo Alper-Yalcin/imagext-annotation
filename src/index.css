@@ -1,33 +1,50 @@
 @import "tailwindcss";
 
 @theme {
-  --color-app-bg: #05070A;
-  --color-surface: #0B0F14;
-  --color-surface-elevated: #111827;
-  --color-surface-3: #161B22;
-  --color-border: rgba(255,255,255,0.08);
+  --color-app-bg: #050814;
+  --color-surface: #0A0F1C;
+  --color-surface-elevated: #101827;
+  --color-surface-3: #172033;
+  --color-border: rgba(148, 163, 184, 0.16);
   --color-accent: #7C3AED;
-  --color-accent-hover: #8B5CF6;
+  --color-accent-hover: #60A5FA;
   --color-text-muted: #94A3B8;
 }
 
 @layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  #root {
+    min-height: 100%;
+  }
+
   body {
-    background: radial-gradient(circle at top left, rgba(124,58,237,0.18), transparent 32%),
-                radial-gradient(circle at top right, rgba(59,130,246,0.08), transparent 28%),
-                #05070A;
-    background-color: #05070A;
+    background:
+      radial-gradient(circle at 18% 0%, rgba(124, 58, 237, 0.18), transparent 30%),
+      radial-gradient(circle at 82% 8%, rgba(37, 99, 235, 0.14), transparent 28%),
+      linear-gradient(135deg, #050814 0%, #070B13 48%, #03050A 100%);
+    background-color: #050814;
     color: #F8FAFC;
     font-family: ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
+    margin: 0;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
   }
 }
 
-/* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
 }
 
 ::-webkit-scrollbar-track {
@@ -35,15 +52,158 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #111827;
-  border-radius: 5px;
-  border: 2px solid #05070A;
+  background: rgba(71, 85, 105, 0.7);
+  border-radius: 999px;
+  border: 2px solid rgba(5, 8, 20, 0.8);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #7C3AED;
+  background: rgba(124, 58, 237, 0.85);
 }
 
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+@layer components {
+  .studio-surface {
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(8, 13, 25, 0.92));
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(18px);
+  }
+
+  .studio-input {
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(2, 6, 23, 0.48);
+    color: #F8FAFC;
+    outline: none;
+    transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  }
+
+  .studio-input::placeholder {
+    color: #64748B;
+  }
+
+  .studio-input:focus {
+    border-color: rgba(124, 58, 237, 0.75);
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.16);
+    background: rgba(2, 6, 23, 0.7);
+  }
+}
+
+[data-theme="light"] body {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(124, 58, 237, 0.12), transparent 30%),
+    radial-gradient(circle at 84% 6%, rgba(59, 130, 246, 0.12), transparent 28%),
+    linear-gradient(135deg, #F8FAFC 0%, #EEF2FF 46%, #F1F5F9 100%);
+  background-color: #F8FAFC;
+  color: #0F172A;
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.78);
+  border-color: rgba(248, 250, 252, 0.9);
+}
+
+[data-theme="light"] .studio-surface {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(248, 250, 252, 0.92));
+  border-color: rgba(15, 23, 42, 0.1);
+  box-shadow: 0 18px 55px rgba(15, 23, 42, 0.1);
+}
+
+[data-theme="light"] .studio-input {
+  border-color: rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.78);
+  color: #0F172A;
+}
+
+[data-theme="light"] .studio-input::placeholder {
+  color: #94A3B8;
+}
+
+[data-theme="light"] .studio-input:focus {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(124, 58, 237, 0.62);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.14);
+}
+
+[data-theme="light"] .bg-app-bg,
+[data-theme="light"] [class*="bg-app-bg"] {
+  background-color: rgba(248, 250, 252, 0.86) !important;
+}
+
+[data-theme="light"] [class*="bg-slate-950"],
+[data-theme="light"] [class*="bg-slate-900"],
+[data-theme="light"] [class*="bg-zinc-950"],
+[data-theme="light"] [class*="bg-zinc-900"] {
+  background-color: rgba(255, 255, 255, 0.78) !important;
+}
+
+[data-theme="light"] [class*="bg-slate-800"],
+[data-theme="light"] [class*="bg-zinc-800"] {
+  background-color: rgba(241, 245, 249, 0.92) !important;
+}
+
+[data-theme="light"] [class*="bg-white/"],
+[data-theme="light"] [class*="bg-white\\["] {
+  background-color: rgba(15, 23, 42, 0.045) !important;
+}
+
+[data-theme="light"] [class*="bg-black/"] {
+  background-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+[data-theme="light"] [class*="border-slate-700"],
+[data-theme="light"] [class*="border-slate-600"],
+[data-theme="light"] [class*="border-zinc-800"],
+[data-theme="light"] [class*="border-zinc-700"],
+[data-theme="light"] [class*="border-white/"] {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+[data-theme="light"] .text-white,
+[data-theme="light"] .text-slate-100,
+[data-theme="light"] .text-slate-200,
+[data-theme="light"] .text-zinc-100,
+[data-theme="light"] .text-zinc-200 {
+  color: #0F172A !important;
+}
+
+[data-theme="light"] .text-slate-300,
+[data-theme="light"] .text-zinc-300 {
+  color: #334155 !important;
+}
+
+[data-theme="light"] .text-slate-400,
+[data-theme="light"] .text-slate-500,
+[data-theme="light"] .text-zinc-400,
+[data-theme="light"] .text-zinc-500 {
+  color: #64748B !important;
+}
+
+[data-theme="light"] .text-slate-600 {
+  color: #94A3B8 !important;
+}
+
+[data-theme="light"] .theme-on-accent,
+[data-theme="light"] .theme-on-accent *,
+[data-theme="light"] [class*="bg-gradient-to-r"].text-white,
+[data-theme="light"] [class*="bg-gradient-to-br"] .text-white {
+  color: #FFFFFF !important;
+}
+
+[data-theme="light"] [class*="shadow-black"] {
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12) !important;
+}
+
+[data-theme="light"] [class*="shadow-violet-950"] {
+  box-shadow: 0 16px 42px rgba(124, 58, 237, 0.14) !important;
+}
+
+[data-theme="light"] [class*="opacity-\\[0\\.16\\]"],
+[data-theme="light"] [class*="opacity-\\[0\\.18\\]"] {
+  opacity: 0.32 !important;
 }
