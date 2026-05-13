@@ -11,3 +11,5 @@ export interface ImageItem {
   status: ImageStatus;
   createdAt: string;
 }
+
+export type ImageMeta = Omit<ImageItem, "dataUrl">;

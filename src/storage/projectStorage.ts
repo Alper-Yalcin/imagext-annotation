@@ -1,5 +1,4 @@
 import { Project } from "../types/project";
-import { mockProjects } from "../data/mockProjects";
 
 const STORAGE_KEY = "imagext_projects";
 
@@ -12,10 +11,8 @@ export function getProjects(): Project[] {
       console.error("Failed to parse projects from localStorage", e);
     }
   }
-  
-  // If no projects in storage, initialize with mock projects
-  saveProjects(mockProjects);
-  return mockProjects;
+
+  return [];
 }
 
 export function getProjectById(projectId: string): Project | undefined {

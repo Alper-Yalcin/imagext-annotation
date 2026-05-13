@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Project } from "../types/project";
 import { getProjectById } from "../storage/projectStorage";
-import { ImageItem } from "../types/image";
-import { getImagesByProjectId } from "../storage/imageStorage";
+import { ImageMeta } from "../types/image";
+import { getImageMetasByProjectId } from "../storage/imageStorage";
 import { ClassificationAnnotator } from "../components/annotation/ClassificationAnnotator";
 import { YoloAnnotator } from "../components/annotation/YoloAnnotator";
 import { ArrowLeft } from "lucide-react";
@@ -12,7 +12,7 @@ export function AnnotationPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
-  const [images, setImages] = useState<ImageItem[]>([]);
+  const [images, setImages] = useState<ImageMeta[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -21,7 +21,7 @@ export function AnnotationPage() {
         const p = getProjectById(projectId);
         if (p) {
           setProject(p);
-          setImages(await getImagesByProjectId(p.id));
+          setImages(await getImageMetasByProjectId(p.id));
         }
       }
       setLoading(false);

@@ -6,13 +6,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Keyboard,
+  Loader2,
   Save,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
 import useImage from "use-image";
 import { Project } from "../../types/project";
-import { ImageItem } from "../../types/image";
+import { ImageItem, ImageMeta } from "../../types/image";
 import { DetectionAnnotation } from "../../types/annotation";
 import { ImageSidebar } from "./ImageSidebar";
 import { ClassPanel } from "./ClassPanel";
@@ -22,9 +23,10 @@ import { DetectionCanvas } from "./DetectionCanvas";
 import {
   deleteDetectionAnnotationsByClassId,
   getDetectionAnnotationsByImageId,
+  getDetectionAnnotationsByProjectId,
   replaceDetectionAnnotationsForImage,
 } from "../../storage/annotationStorage";
-import { updateImageStatus } from "../../storage/imageStorage";
+import { getImageById, updateImageStatus } from "../../storage/imageStorage";
 import { updateProject } from "../../storage/projectStorage";
 import { createId } from "../../utils/id";
 import { getClassColor } from "../../utils/classColor";
@@ -36,13 +38,14 @@ import { Button } from "../ui/Button";
 
 interface YoloAnnotatorProps {
   project: Project;
-  initialImages: ImageItem[];
+  initialImages: ImageMeta[];
 }
 
 export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
   const navigate = useNavigate();
   const [activeProject, setActiveProject] = useState<Project>(project);
-  const [images, setImages] = useState<ImageItem[]>(initialImages);
+  const [images, setImages] = useState<ImageMeta[]>(initialImages);
+  const [currentImage, setCurrentImage] = useState<ImageItem | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedClassId, setSelectedClassId] = useState<string | undefined>();
   const [toolMode, setToolMode] = useState<AnnotationToolMode>("draw");
@@ -60,11 +63,20 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const transformerRef = useRef<any>(null);
-  const currentImage = images[currentIndex];
+  const currentImageMeta = images[currentIndex];
   const [konvaImage] = useImage(currentImage?.dataUrl || "");
   const isDirty = JSON.stringify(boxes) !== JSON.stringify(savedBoxes);
   const { confirm } = useConfirm();
   const { showToast } = useToast();
+  const [imageClassIdsByImageId, setImageClassIdsByImageId] = useState<Record<string, string[]>>(() => {
+    const map: Record<string, Set<string>> = {};
+    getDetectionAnnotationsByProjectId(project.id).forEach((annotation) => {
+      map[annotation.imageId] = map[annotation.imageId] || new Set<string>();
+      map[annotation.imageId].add(annotation.classId);
+    });
+
+    return Object.fromEntries(Object.entries(map).map(([imageId, classIds]) => [imageId, Array.from(classIds)]));
+  });
 
   const fitToScreen = useCallback(() => {
     if (!containerRef.current || !currentImage) return;
@@ -77,6 +89,21 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
     setScale(Math.min(1, Math.max(0.1, Math.min(scaleX, scaleY))));
     setStagePos({ x: 0, y: 0 });
   }, [currentImage]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    setCurrentImage(null);
+    if (!currentImageMeta) return;
+
+    getImageById(activeProject.id, currentImageMeta.id).then((image) => {
+      if (!isCancelled) setCurrentImage(image || null);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeProject.id, currentImageMeta]);
 
   useEffect(() => {
     if (currentImage) {
@@ -172,9 +199,13 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
     setTimeout(async () => {
       try {
         replaceDetectionAnnotationsForImage(currentImage.id, activeProject.id, boxes);
-        await updateImageStatus(currentImage.id, "labeled");
+        await updateImageStatus(currentImage.id, "labeled", activeProject.id);
         setSavedBoxes([...boxes]);
         setImages((prev) => prev.map((img) => (img.id === currentImage.id ? { ...img, status: "labeled" } : img)));
+        setImageClassIdsByImageId((prev) => ({
+          ...prev,
+          [currentImage.id]: Array.from(new Set(boxes.map((box) => box.classId))),
+        }));
         showToast({ type: "success", title: "Saved", message: "YOLO annotations saved successfully." });
       } catch {
         showToast({ type: "error", title: "Error", message: "Failed to save annotations." });
@@ -260,6 +291,14 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
     setActiveProject(updatedProject);
     setBoxes(prev => prev.filter(box => box.classId !== classId));
     setSavedBoxes(prev => prev.filter(box => box.classId !== classId));
+    setImageClassIdsByImageId((prev) => {
+      const next: Record<string, string[]> = {};
+      Object.entries(prev).forEach(([imageId, classIds]) => {
+        const remainingClassIds = classIds.filter((id) => id !== classId);
+        if (remainingClassIds.length > 0) next[imageId] = remainingClassIds;
+      });
+      return next;
+    });
     setHistory([]);
     setRedoStack([]);
     if (selectedClassId === classId) setSelectedClassId(undefined);
@@ -472,7 +511,7 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
 
   useKeyboardShortcuts(shortcutMap, !showShortcuts);
 
-  if (!currentImage) return null;
+  if (!currentImageMeta) return null;
 
   const stageWidth = containerRef.current?.clientWidth || window.innerWidth / 2;
   const stageHeight = containerRef.current?.clientHeight || window.innerHeight / 2;
@@ -542,14 +581,20 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <ImageSidebar images={images} currentImageId={currentImage.id} onSelectImage={handleSelectImage} />
+        <ImageSidebar
+          images={images}
+          currentImageId={currentImageMeta.id}
+          classes={activeProject.classes}
+          imageClassIdsByImageId={imageClassIdsByImageId}
+          onSelectImage={handleSelectImage}
+        />
 
         <main className="relative flex min-w-0 flex-1 flex-col bg-slate-950/35">
           <div className="flex items-center justify-between border-b border-slate-700/30 px-5 py-3">
             <div className="min-w-0">
-              <h2 className="truncate text-sm font-bold text-white">{currentImage.name}</h2>
+              <h2 className="truncate text-sm font-bold text-white">{currentImageMeta.name}</h2>
               <p className="text-xs text-slate-500">
-                {currentImage.width}x{currentImage.height}px · {boxes.length} box
+                {currentImageMeta.width}x{currentImageMeta.height}px - {boxes.length} box
               </p>
             </div>
             {isDirty && (
@@ -561,31 +606,38 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
           </div>
 
           <div ref={containerRef} className="min-h-0 flex-1 p-4">
-            <DetectionCanvas
-              project={activeProject}
-              currentImage={currentImage}
-              konvaImage={konvaImage || undefined}
-              boxes={boxes}
-              selectedBoxId={selectedBoxId}
-              selectedClassId={selectedClassId}
-              toolMode={toolMode}
-              scale={scale}
-              stagePos={stagePos}
-              transformerRef={transformerRef}
-              isDrawing={isDrawing}
-              newBox={newBox}
-              cursorClass={cursorClass}
-              stageWidth={stageWidth}
-              stageHeight={stageHeight}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onWheel={handleWheel}
-              onStageDragEnd={setStagePos}
-              onBoxClick={handleBoxClick}
-              onBoxDragEnd={handleDragEnd}
-              onBoxTransformEnd={handleTransformEnd}
-            />
+            {currentImage ? (
+              <DetectionCanvas
+                project={activeProject}
+                currentImage={currentImage}
+                konvaImage={konvaImage || undefined}
+                boxes={boxes}
+                selectedBoxId={selectedBoxId}
+                selectedClassId={selectedClassId}
+                toolMode={toolMode}
+                scale={scale}
+                stagePos={stagePos}
+                transformerRef={transformerRef}
+                isDrawing={isDrawing}
+                newBox={newBox}
+                cursorClass={cursorClass}
+                stageWidth={stageWidth}
+                stageHeight={stageHeight}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onWheel={handleWheel}
+                onStageDragEnd={setStagePos}
+                onBoxClick={handleBoxClick}
+                onBoxDragEnd={handleDragEnd}
+                onBoxTransformEnd={handleTransformEnd}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center gap-2 text-sm font-semibold text-slate-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Gorsel yukleniyor
+              </div>
+            )}
           </div>
 
           <div className="pointer-events-none absolute bottom-7 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-slate-700/60 bg-slate-950/80 p-2 shadow-2xl shadow-black/30 backdrop-blur-xl">

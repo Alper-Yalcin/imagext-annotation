@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowRight, FolderKanban, Image as ImageIcon, Layers, Plus, Target } from "lucide-react";
 import { Project } from "../types/project";
 import { getProjects } from "../storage/projectStorage";
-import { getImagesByProjectId } from "../storage/imageStorage";
+import { getImageMetasByProjectId } from "../storage/imageStorage";
 import { TopBar } from "../components/layout/TopBar";
 import { Breadcrumbs } from "../components/layout/Breadcrumbs";
 import { StatCard } from "../components/ui/StatCard";
@@ -25,7 +25,7 @@ export function DashboardPage() {
     const storedProjects = getProjects();
     const enrichedProjects = await Promise.all(
       storedProjects.map(async (project) => {
-        const images = await getImagesByProjectId(project.id);
+        const images = await getImageMetasByProjectId(project.id);
         return {
           ...project,
           totalImages: images.length,

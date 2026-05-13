@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Database, Plus, Search } from "lucide-react";
 import { Project } from "../types/project";
 import { getProjects, deleteProject } from "../storage/projectStorage";
-import { deleteImagesByProjectId, getImagesByProjectId } from "../storage/imageStorage";
+import { deleteImagesByProjectId, getImageMetasByProjectId } from "../storage/imageStorage";
 import {
   deleteClassificationAnnotationsByProjectId,
   deleteDetectionAnnotationsByProjectId,
@@ -35,7 +35,7 @@ export function ProjectsPage() {
     const storedProjects = getProjects();
     const enrichedProjects = await Promise.all(
       storedProjects.map(async (project) => {
-        const images = await getImagesByProjectId(project.id);
+        const images = await getImageMetasByProjectId(project.id);
         return {
           ...project,
           totalImages: images.length,

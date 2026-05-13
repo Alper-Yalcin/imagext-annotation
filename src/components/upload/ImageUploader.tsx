@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
 import { Upload, FolderPlus, ImagePlus } from "lucide-react";
-import { ImageItem } from "../../types/image";
+import { ImageItem, ImageMeta } from "../../types/image";
 import { fileToDataUrl, getImageSize, isSupportedImageFile } from "../../utils/image";
 import { createId } from "../../utils/id";
 import { useToast } from "../../context/ToastContext";
@@ -8,7 +8,7 @@ import { Button } from "../ui/Button";
 
 interface ImageUploaderProps {
   projectId: string;
-  existingImages: ImageItem[];
+  existingImages: ImageMeta[];
   onImagesUploaded: (images: ImageItem[]) => void;
 }
 

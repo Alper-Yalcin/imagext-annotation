@@ -1,10 +1,10 @@
 import { Project } from "../types/project";
-import { ImageItem } from "../types/image";
+import { ImageMeta } from "../types/image";
 import { ClassificationAnnotation } from "../types/annotation";
 
 export function generateClassificationCsv(
   project: Project,
-  images: ImageItem[],
+  images: ImageMeta[],
   annotations: ClassificationAnnotation[]
 ): string {
   const header = "image_name,label\n";

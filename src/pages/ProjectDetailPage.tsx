@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 import { Project } from "../types/project";
 import { getProjectById } from "../storage/projectStorage";
-import { ImageItem } from "../types/image";
-import { addImages, deleteImage, getImagesByProjectId } from "../storage/imageStorage";
+import { ImageItem, ImageMeta } from "../types/image";
+import { addImages, deleteImage, getImageDataUrl, getImageMetasByProjectId, getImagesByProjectId } from "../storage/imageStorage";
 import {
   deleteClassificationAnnotationByImageId,
   deleteDetectionAnnotationsByImageId,
@@ -42,7 +42,7 @@ export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
-  const [images, setImages] = useState<ImageItem[]>([]);
+  const [images, setImages] = useState<ImageMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingExport, setLoadingExport] = useState(false);
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
@@ -56,7 +56,7 @@ export function ProjectDetailPage() {
         const p = getProjectById(projectId);
         if (p) {
           setProject(p);
-          setImages(await getImagesByProjectId(p.id));
+          setImages(await getImageMetasByProjectId(p.id));
         }
       }
       setLoading(false);
@@ -136,7 +136,8 @@ export function ProjectDetailPage() {
         showToast({ type: "success", title: "Export Successful", message: "Classification dataset downloaded." });
       } else {
         const annotations = getDetectionAnnotationsByProjectId(project.id);
-        await exportYoloZip(project, images, annotations);
+        const imagesWithData = await getImagesByProjectId(project.id);
+        await exportYoloZip(project, imagesWithData, annotations);
         showToast({ type: "success", title: "Export Successful", message: "YOLO dataset downloaded." });
       }
     } catch (err) {
@@ -150,7 +151,7 @@ export function ProjectDetailPage() {
   const handleImagesUploaded = async (newImages: ImageItem[]) => {
     try {
       await addImages(newImages);
-      setImages(await getImagesByProjectId(project.id));
+      setImages(await getImageMetasByProjectId(project.id));
       showToast({ type: "success", title: "Upload Complete", message: `${newImages.length} images added to project.` });
     } catch (e: any) {
       showToast({ type: "error", title: "Upload Failed", message: e.message || "Failed to save images" });
@@ -168,8 +169,8 @@ export function ProjectDetailPage() {
     if (isConfirmed) {
       deleteClassificationAnnotationByImageId(imageId);
       deleteDetectionAnnotationsByImageId(imageId);
-      await deleteImage(imageId);
-      setImages(await getImagesByProjectId(project.id));
+      await deleteImage(imageId, project.id);
+      setImages(await getImageMetasByProjectId(project.id));
       showToast({ type: "info", title: "Image Deleted", message: "Image and its annotations removed." });
     }
   };
@@ -299,7 +300,7 @@ export function ProjectDetailPage() {
                     {recentImages.length > 0 ? (
                       recentImages.map((image) => (
                         <div key={image.id} className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-slate-950">
-                          <img src={image.dataUrl} alt={image.name} className="h-full w-full object-cover" loading="lazy" />
+                          <LazyImage imageId={image.id} alt={image.name} />
                         </div>
                       ))
                     ) : (
@@ -372,4 +373,24 @@ function Metric({ label, value }: { label: string; value: number }) {
       <p className="mt-1 text-lg font-bold text-white">{value.toLocaleString()}</p>
     </div>
   );
+}
+
+function LazyImage({ imageId, alt }: { imageId: string; alt: string }) {
+  const [src, setSrc] = useState<string>();
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    getImageDataUrl(imageId).then((dataUrl) => {
+      if (!isCancelled) setSrc(dataUrl);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [imageId]);
+
+  if (!src) return null;
+
+  return <img src={src} alt={alt} className="h-full w-full object-cover" loading="lazy" />;
 }

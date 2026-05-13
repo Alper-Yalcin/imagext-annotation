@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, CheckCircle2, Keyboard, Save } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, CheckCircle2, Keyboard, Loader2, Save } from "lucide-react";
 import { Project } from "../../types/project";
-import { ImageItem } from "../../types/image";
+import { ImageItem, ImageMeta } from "../../types/image";
 import { ImageSidebar } from "./ImageSidebar";
 import { ClassPanel } from "./ClassPanel";
 import {
@@ -11,7 +11,7 @@ import {
   getClassificationAnnotationsByProjectId,
   upsertClassificationAnnotation,
 } from "../../storage/annotationStorage";
-import { updateImageStatus } from "../../storage/imageStorage";
+import { getImageById, updateImageStatus } from "../../storage/imageStorage";
 import { updateProject } from "../../storage/projectStorage";
 import { createId } from "../../utils/id";
 import { getClassColor } from "../../utils/classColor";
@@ -23,13 +23,14 @@ import { Button } from "../ui/Button";
 
 interface ClassificationAnnotatorProps {
   project: Project;
-  initialImages: ImageItem[];
+  initialImages: ImageMeta[];
 }
 
 export function ClassificationAnnotator({ project, initialImages }: ClassificationAnnotatorProps) {
   const navigate = useNavigate();
   const [activeProject, setActiveProject] = useState<Project>(project);
-  const [images, setImages] = useState<ImageItem[]>(initialImages);
+  const [images, setImages] = useState<ImageMeta[]>(initialImages);
+  const [currentImage, setCurrentImage] = useState<ImageItem | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedClassId, setSelectedClassId] = useState<string | undefined>();
   const [savedClassId, setSavedClassId] = useState<string | undefined>();
@@ -38,17 +39,39 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
 
   const { confirm } = useConfirm();
   const { showToast } = useToast();
-  const currentImage = images[currentIndex];
+  const currentImageMeta = images[currentIndex];
   const isDirty = selectedClassId !== savedClassId;
   const selectedClass = activeProject.classes.find((cls) => cls.id === selectedClassId);
+  const [imageClassIdsByImageId, setImageClassIdsByImageId] = useState<Record<string, string[]>>(() => {
+    const map: Record<string, string[]> = {};
+    getClassificationAnnotationsByProjectId(project.id).forEach((annotation) => {
+      map[annotation.imageId] = [annotation.classId];
+    });
+    return map;
+  });
 
   useEffect(() => {
-    if (currentImage) {
-      const annotation = getClassificationAnnotationByImageId(currentImage.id);
+    let isCancelled = false;
+
+    setCurrentImage(null);
+    if (!currentImageMeta) return;
+
+    getImageById(activeProject.id, currentImageMeta.id).then((image) => {
+      if (!isCancelled) setCurrentImage(image || null);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeProject.id, currentImageMeta]);
+
+  useEffect(() => {
+    if (currentImageMeta) {
+      const annotation = getClassificationAnnotationByImageId(currentImageMeta.id);
       setSelectedClassId(annotation?.classId);
       setSavedClassId(annotation?.classId);
     }
-  }, [currentIndex, currentImage]);
+  }, [currentIndex, currentImageMeta]);
 
   const requestImageChange = async (newIndex: number) => {
     if (isDirty) {
@@ -95,9 +118,10 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
           updatedAt: new Date().toISOString(),
         });
 
-        await updateImageStatus(currentImage.id, "labeled");
+        await updateImageStatus(currentImage.id, "labeled", activeProject.id);
         setSavedClassId(selectedClassId);
         setImages((prev) => prev.map((img) => (img.id === currentImage.id ? { ...img, status: "labeled" } : img)));
+        setImageClassIdsByImageId((prev) => ({ ...prev, [currentImage.id]: [selectedClassId] }));
         showToast({ type: "success", title: "Saved", message: "Annotation saved successfully.", duration: 2000 });
       } catch {
         showToast({ type: "error", title: "Error", message: "Failed to save annotation." });
@@ -169,10 +193,17 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
 
     deleteClassificationAnnotationsByClassId(activeProject.id, classId);
     updateProject(updatedProject);
-    await Promise.all(Array.from(affectedImageIds).map(imageId => updateImageStatus(imageId, "unlabeled")));
+    await Promise.all(Array.from(affectedImageIds).map(imageId => updateImageStatus(imageId, "unlabeled", activeProject.id)));
 
     setActiveProject(updatedProject);
     setImages(prev => prev.map(img => affectedImageIds.has(img.id) ? { ...img, status: "unlabeled" } : img));
+    setImageClassIdsByImageId((prev) => {
+      const next = { ...prev };
+      affectedImageIds.forEach((imageId) => {
+        delete next[imageId];
+      });
+      return next;
+    });
     if (selectedClassId === classId) setSelectedClassId(undefined);
     if (savedClassId === classId) setSavedClassId(undefined);
 
@@ -203,7 +234,7 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
 
   useKeyboardShortcuts(shortcutMap, !showShortcuts);
 
-  if (!currentImage) return null;
+  if (!currentImageMeta) return null;
 
   return (
     <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-app-bg text-slate-100">
@@ -248,14 +279,20 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <ImageSidebar images={images} currentImageId={currentImage.id} onSelectImage={handleSelectImage} />
+        <ImageSidebar
+          images={images}
+          currentImageId={currentImageMeta.id}
+          classes={activeProject.classes}
+          imageClassIdsByImageId={imageClassIdsByImageId}
+          onSelectImage={handleSelectImage}
+        />
 
         <main className="flex min-w-0 flex-1 flex-col bg-slate-950/35 p-4">
           <div className="mb-4 flex items-center justify-between">
             <div className="min-w-0">
-              <h2 className="truncate text-sm font-bold text-white">{currentImage.name}</h2>
+              <h2 className="truncate text-sm font-bold text-white">{currentImageMeta.name}</h2>
               <p className="text-xs text-slate-500">
-                {currentImage.width}x{currentImage.height}px · classification
+                {currentImageMeta.width}x{currentImageMeta.height}px - classification
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -276,12 +313,19 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
 
           <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl border border-slate-700/50 bg-slate-950">
             <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(148,163,184,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,.18)_1px,transparent_1px)] [background-size:32px_32px]" />
-            <img
-              key={currentImage.id}
-              src={currentImage.dataUrl}
-              alt={currentImage.name}
-              className="relative max-h-full max-w-full rounded-lg object-contain shadow-2xl shadow-black/40"
-            />
+            {currentImage ? (
+              <img
+                key={currentImage.id}
+                src={currentImage.dataUrl}
+                alt={currentImage.name}
+                className="relative max-h-full max-w-full rounded-lg object-contain shadow-2xl shadow-black/40"
+              />
+            ) : (
+              <div className="relative flex items-center gap-2 text-sm font-semibold text-slate-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Gorsel yukleniyor
+              </div>
+            )}
           </div>
         </main>
 

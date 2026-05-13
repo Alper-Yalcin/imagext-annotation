@@ -1,9 +1,11 @@
+import { useEffect, useState } from "react";
 import { CheckCircle2, Circle, Image as ImageIcon, Trash2 } from "lucide-react";
-import { ImageItem } from "../../types/image";
+import { ImageMeta } from "../../types/image";
+import { getImageDataUrl } from "../../storage/imageStorage";
 import { Badge } from "../ui/Badge";
 
 interface ImageGridProps {
-  images: ImageItem[];
+  images: ImageMeta[];
   onDeleteImage?: (imageId: string) => void;
 }
 
@@ -48,7 +50,7 @@ export function ImageGrid({ images, onDeleteImage }: ImageGridProps) {
             )}
 
             <div className="aspect-square bg-slate-950">
-              <img src={image.dataUrl} alt={image.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+              <LazyGridImage imageId={image.id} alt={image.name} />
             </div>
 
             <div className="p-3">
@@ -63,5 +65,32 @@ export function ImageGrid({ images, onDeleteImage }: ImageGridProps) {
         );
       })}
     </div>
+  );
+}
+
+function LazyGridImage({ imageId, alt }: { imageId: string; alt: string }) {
+  const [src, setSrc] = useState<string>();
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    getImageDataUrl(imageId).then((dataUrl) => {
+      if (!isCancelled) setSrc(dataUrl);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [imageId]);
+
+  if (!src) return null;
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+      loading="lazy"
+    />
   );
 }
