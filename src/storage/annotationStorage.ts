@@ -1,4 +1,5 @@
 import { ClassificationAnnotation, DetectionAnnotation } from "../types/annotation";
+import { persistClassificationAnnotations, persistDetectionAnnotations } from "./serverStorage";
 
 const CLASSIFICATION_STORAGE_KEY = "imagext_classification_annotations";
 const DETECTION_STORAGE_KEY = "imagext_detection_annotations";
@@ -18,6 +19,7 @@ export function getClassificationAnnotations(): ClassificationAnnotation[] {
 export function saveClassificationAnnotations(annotations: ClassificationAnnotation[]): void {
   try {
     localStorage.setItem(CLASSIFICATION_STORAGE_KEY, JSON.stringify(annotations));
+    persistClassificationAnnotations(annotations);
   } catch (e) {
     console.error("Failed to save classification annotations to localStorage", e);
   }
@@ -74,6 +76,7 @@ export function getDetectionAnnotations(): DetectionAnnotation[] {
 export function saveDetectionAnnotations(annotations: DetectionAnnotation[]): void {
   try {
     localStorage.setItem(DETECTION_STORAGE_KEY, JSON.stringify(annotations));
+    persistDetectionAnnotations(annotations);
   } catch (e) {
     console.error("Failed to save detection annotations to localStorage", e);
   }

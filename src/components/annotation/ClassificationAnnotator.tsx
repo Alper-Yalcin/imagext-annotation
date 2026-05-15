@@ -1,17 +1,30 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, CheckCircle2, Keyboard, Loader2, Save } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle2,
+  Keyboard,
+  Loader2,
+  Save,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { Project } from "../../types/project";
 import { ImageItem, ImageMeta } from "../../types/image";
 import { ImageSidebar } from "./ImageSidebar";
 import { ClassPanel } from "./ClassPanel";
 import {
+  deleteClassificationAnnotationByImageId,
   deleteClassificationAnnotationsByClassId,
+  deleteDetectionAnnotationsByImageId,
   getClassificationAnnotationByImageId,
   getClassificationAnnotationsByProjectId,
   upsertClassificationAnnotation,
 } from "../../storage/annotationStorage";
-import { getImageById, updateImageStatus } from "../../storage/imageStorage";
+import { deleteImage, getImageById, updateImageStatus } from "../../storage/imageStorage";
 import { updateProject } from "../../storage/projectStorage";
 import { createId } from "../../utils/id";
 import { getClassColor } from "../../utils/classColor";
@@ -26,6 +39,8 @@ interface ClassificationAnnotatorProps {
   initialImages: ImageMeta[];
 }
 
+const IMAGE_VIEW_PADDING = 48;
+
 export function ClassificationAnnotator({ project, initialImages }: ClassificationAnnotatorProps) {
   const navigate = useNavigate();
   const [activeProject, setActiveProject] = useState<Project>(project);
@@ -36,6 +51,9 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
   const [savedClassId, setSavedClassId] = useState<string | undefined>();
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [imageZoom, setImageZoom] = useState(1);
+  const [imageViewportSize, setImageViewportSize] = useState({ width: 0, height: 0 });
+  const imageViewportRef = useRef<HTMLDivElement>(null);
 
   const { confirm } = useConfirm();
   const { showToast } = useToast();
@@ -70,8 +88,24 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
       const annotation = getClassificationAnnotationByImageId(currentImageMeta.id);
       setSelectedClassId(annotation?.classId);
       setSavedClassId(annotation?.classId);
+      setImageZoom(1);
     }
   }, [currentIndex, currentImageMeta]);
+
+  useEffect(() => {
+    const element = imageViewportRef.current;
+    if (!element) return;
+
+    const updateViewportSize = () => {
+      setImageViewportSize({ width: element.clientWidth, height: element.clientHeight });
+    };
+    updateViewportSize();
+
+    const resizeObserver = new ResizeObserver(updateViewportSize);
+    resizeObserver.observe(element);
+
+    return () => resizeObserver.disconnect();
+  }, []);
 
   const requestImageChange = async (newIndex: number) => {
     if (isDirty) {
@@ -216,11 +250,102 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
     });
   };
 
+  const handleDeleteImage = async (imageId: string) => {
+    const targetImage = images.find((image) => image.id === imageId);
+    if (!targetImage) return;
+
+    const confirmed = await confirm({
+      title: "Delete Image",
+      message: `"${targetImage.name}" silinsin mi? Bu gorsele ait annotation'lar da silinecek.`,
+      confirmLabel: "Delete Image",
+      variant: "danger",
+    });
+    if (!confirmed) return;
+
+    deleteClassificationAnnotationByImageId(imageId);
+    deleteDetectionAnnotationsByImageId(imageId);
+    await deleteImage(imageId, activeProject.id);
+
+    const deletedIndex = images.findIndex((image) => image.id === imageId);
+    const nextImages = images.filter((image) => image.id !== imageId);
+
+    setImages(nextImages);
+    setImageClassIdsByImageId((prev) => {
+      const next = { ...prev };
+      delete next[imageId];
+      return next;
+    });
+
+    if (currentImage?.id === imageId) {
+      setCurrentImage(null);
+      setSelectedClassId(undefined);
+      setSavedClassId(undefined);
+    }
+
+    if (nextImages.length === 0) {
+      showToast({ type: "info", title: "Image Deleted", message: "Son gorsel silindi. Proje sayfasina donuluyor." });
+      navigate(`/projects/${activeProject.id}`);
+      return;
+    }
+
+    let nextIndex = currentIndex;
+    if (deletedIndex < currentIndex) nextIndex = currentIndex - 1;
+    if (nextIndex >= nextImages.length) nextIndex = nextImages.length - 1;
+    setCurrentIndex(nextIndex);
+
+    showToast({ type: "info", title: "Image Deleted", message: "Gorsel ve annotation'lari silindi." });
+  };
+
+  const updateImageZoom = useCallback((getNextZoom: (currentZoom: number) => number) => {
+    const viewport = imageViewportRef.current;
+    const centerX = viewport && viewport.scrollWidth > 0
+      ? (viewport.scrollLeft + viewport.clientWidth / 2) / viewport.scrollWidth
+      : 0.5;
+    const centerY = viewport && viewport.scrollHeight > 0
+      ? (viewport.scrollTop + viewport.clientHeight / 2) / viewport.scrollHeight
+      : 0.5;
+
+    setImageZoom((currentZoom) => {
+      const nextZoom = Math.max(1, Math.min(6, getNextZoom(currentZoom)));
+
+      window.requestAnimationFrame(() => {
+        const nextViewport = imageViewportRef.current;
+        if (!nextViewport) return;
+
+        nextViewport.scrollLeft = nextViewport.scrollWidth * centerX - nextViewport.clientWidth / 2;
+        nextViewport.scrollTop = nextViewport.scrollHeight * centerY - nextViewport.clientHeight / 2;
+      });
+
+      return nextZoom;
+    });
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    updateImageZoom((value) => value * 1.2);
+  }, [updateImageZoom]);
+
+  const handleZoomOut = useCallback(() => {
+    updateImageZoom((value) => value / 1.2);
+  }, [updateImageZoom]);
+
+  const handleFitImage = useCallback(() => {
+    setImageZoom(1);
+    window.requestAnimationFrame(() => {
+      const viewport = imageViewportRef.current;
+      if (!viewport) return;
+      viewport.scrollLeft = 0;
+      viewport.scrollTop = 0;
+    });
+  }, []);
+
   const shortcutMap = useMemo(() => {
     const map: Record<string, (event: KeyboardEvent) => void> = {
       A: handlePrev,
       D: handleNext,
       S: handleSave,
+      Z: handleZoomIn,
+      X: handleZoomOut,
+      F: handleFitImage,
       Escape: () => setSelectedClassId(undefined),
       "?": () => setShowShortcuts(true),
     };
@@ -230,11 +355,28 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
     });
 
     return map;
-  }, [handlePrev, handleNext, handleSave, activeProject.classes]);
+  }, [handlePrev, handleNext, handleSave, handleZoomIn, handleZoomOut, handleFitImage, activeProject.classes]);
 
   useKeyboardShortcuts(shortcutMap, !showShortcuts);
 
   if (!currentImageMeta) return null;
+
+  const fitImageScale = currentImage && imageViewportSize.width > 0 && imageViewportSize.height > 0
+    ? Math.min(
+        1,
+        Math.max(
+          0.05,
+          Math.min(
+            (imageViewportSize.width - IMAGE_VIEW_PADDING) / currentImage.width,
+            (imageViewportSize.height - IMAGE_VIEW_PADDING) / currentImage.height,
+          ),
+        ),
+      )
+    : 1;
+  const displayedImageWidth = currentImage ? currentImage.width * fitImageScale * imageZoom : 0;
+  const displayedImageHeight = currentImage ? currentImage.height * fitImageScale * imageZoom : 0;
+  const imageStageWidth = Math.max(imageViewportSize.width, displayedImageWidth + IMAGE_VIEW_PADDING);
+  const imageStageHeight = Math.max(imageViewportSize.height, displayedImageHeight + IMAGE_VIEW_PADDING);
 
   return (
     <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-app-bg text-slate-100">
@@ -285,6 +427,7 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
           classes={activeProject.classes}
           imageClassIdsByImageId={imageClassIdsByImageId}
           onSelectImage={handleSelectImage}
+          onDeleteImage={handleDeleteImage}
         />
 
         <main className="flex min-w-0 flex-1 flex-col bg-slate-950/35 p-4">
@@ -311,21 +454,55 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
             </div>
           </div>
 
-          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl border border-slate-700/50 bg-slate-950">
+          <div ref={imageViewportRef} className="relative min-h-0 flex-1 overflow-auto rounded-xl border border-slate-700/50 bg-slate-950">
             <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(148,163,184,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,.18)_1px,transparent_1px)] [background-size:32px_32px]" />
             {currentImage ? (
-              <img
-                key={currentImage.id}
-                src={currentImage.dataUrl}
-                alt={currentImage.name}
-                className="relative max-h-full max-w-full rounded-lg object-contain shadow-2xl shadow-black/40"
-              />
+              <div
+                className="relative flex min-h-full min-w-full items-center justify-center p-6"
+                style={{ width: imageStageWidth, height: imageStageHeight }}
+              >
+                <img
+                  key={currentImage.id}
+                  src={currentImage.dataUrl}
+                  alt={currentImage.name}
+                  className="rounded-lg object-contain shadow-2xl shadow-black/40"
+                  style={{ width: displayedImageWidth, height: displayedImageHeight }}
+                />
+              </div>
             ) : (
-              <div className="relative flex items-center gap-2 text-sm font-semibold text-slate-400">
+              <div className="relative flex h-full items-center justify-center gap-2 text-sm font-semibold text-slate-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Gorsel yukleniyor
               </div>
             )}
+            <div className="pointer-events-none sticky bottom-4 left-1/2 z-10 flex w-max -translate-x-1/2 items-center gap-2 rounded-xl border border-slate-700/60 bg-slate-950/80 p-2 shadow-2xl shadow-black/30 backdrop-blur-xl">
+              <button
+                type="button"
+                onClick={handleZoomOut}
+                disabled={imageZoom <= 1}
+                className="pointer-events-auto rounded-lg p-2 text-slate-300 hover:bg-white/10 disabled:opacity-30"
+                title="Uzaklastir (X)"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </button>
+              <span className="min-w-16 text-center font-mono text-xs font-bold text-white">{Math.round(imageZoom * 100)}%</span>
+              <button
+                type="button"
+                onClick={handleZoomIn}
+                className="pointer-events-auto rounded-lg p-2 text-slate-300 hover:bg-white/10"
+                title="Yakinlastir (Z)"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleFitImage}
+                className="pointer-events-auto rounded-lg px-3 py-2 text-xs font-bold text-slate-300 hover:bg-white/10"
+                title="Fit (F)"
+              >
+                Fit
+              </button>
+            </div>
           </div>
         </main>
 
@@ -353,6 +530,8 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
           <Shortcut k="A" label="Onceki gorsel" />
           <Shortcut k="D" label="Sonraki gorsel" />
           <Shortcut k="S" label="Kaydet" />
+          <Shortcut k="Z / X" label="Yakinlastir / uzaklastir" />
+          <Shortcut k="F" label="Fit" />
           <Shortcut k="1-9" label="Sinif sec" />
           <Shortcut k="Esc" label="Secimi temizle" />
         </div>

@@ -21,12 +21,14 @@ import { DetectionAnnotationList } from "./DetectionAnnotationList";
 import { AnnotationToolbar, AnnotationToolMode } from "./AnnotationToolbar";
 import { DetectionCanvas } from "./DetectionCanvas";
 import {
+  deleteClassificationAnnotationByImageId,
   deleteDetectionAnnotationsByClassId,
+  deleteDetectionAnnotationsByImageId,
   getDetectionAnnotationsByImageId,
   getDetectionAnnotationsByProjectId,
   replaceDetectionAnnotationsForImage,
 } from "../../storage/annotationStorage";
-import { getImageById, updateImageStatus } from "../../storage/imageStorage";
+import { deleteImage, getImageById, updateImageStatus } from "../../storage/imageStorage";
 import { updateProject } from "../../storage/projectStorage";
 import { createId } from "../../utils/id";
 import { getClassColor } from "../../utils/classColor";
@@ -313,6 +315,57 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
     });
   };
 
+  const handleDeleteImage = async (imageId: string) => {
+    const targetImage = images.find((image) => image.id === imageId);
+    if (!targetImage) return;
+
+    const confirmed = await confirm({
+      title: "Delete Image",
+      message: `"${targetImage.name}" silinsin mi? Bu gorsele ait annotation'lar da silinecek.`,
+      confirmLabel: "Delete Image",
+      variant: "danger",
+    });
+    if (!confirmed) return;
+
+    deleteClassificationAnnotationByImageId(imageId);
+    deleteDetectionAnnotationsByImageId(imageId);
+    await deleteImage(imageId, activeProject.id);
+
+    const deletedIndex = images.findIndex((image) => image.id === imageId);
+    const nextImages = images.filter((image) => image.id !== imageId);
+
+    setImages(nextImages);
+    setImageClassIdsByImageId((prev) => {
+      const next = { ...prev };
+      delete next[imageId];
+      return next;
+    });
+
+    if (currentImage?.id === imageId) {
+      setCurrentImage(null);
+      setBoxes([]);
+      setSavedBoxes([]);
+      setHistory([]);
+      setRedoStack([]);
+      setSelectedBoxId(undefined);
+      setIsDrawing(false);
+      setNewBox(null);
+    }
+
+    if (nextImages.length === 0) {
+      showToast({ type: "info", title: "Image Deleted", message: "Son gorsel silindi. Proje sayfasina donuluyor." });
+      navigate(`/projects/${activeProject.id}`);
+      return;
+    }
+
+    let nextIndex = currentIndex;
+    if (deletedIndex < currentIndex) nextIndex = currentIndex - 1;
+    if (nextIndex >= nextImages.length) nextIndex = nextImages.length - 1;
+    setCurrentIndex(nextIndex);
+
+    showToast({ type: "info", title: "Image Deleted", message: "Gorsel ve annotation'lari silindi." });
+  };
+
   const getMousePos = (event: any) => {
     const stage = event.target.getStage();
     const pointerPos = stage.getPointerPosition();
@@ -587,6 +640,7 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
           classes={activeProject.classes}
           imageClassIdsByImageId={imageClassIdsByImageId}
           onSelectImage={handleSelectImage}
+          onDeleteImage={handleDeleteImage}
         />
 
         <main className="relative flex min-w-0 flex-1 flex-col bg-slate-950/35">

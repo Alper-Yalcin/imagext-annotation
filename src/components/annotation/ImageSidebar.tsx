@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, Circle, Filter, Images, Loader2, X } from "lucide-react";
+import { CheckCircle2, Circle, Filter, Images, Loader2, Trash2, X } from "lucide-react";
 import { ClassLabel } from "../../types/project";
 import { ImageMeta } from "../../types/image";
 import { getImageDataUrl } from "../../storage/imageStorage";
@@ -11,6 +11,7 @@ interface ImageSidebarProps {
   classes: ClassLabel[];
   imageClassIdsByImageId?: Record<string, string[]>;
   onSelectImage: (imageId: string) => void;
+  onDeleteImage?: (imageId: string) => void;
 }
 
 const ROW_HEIGHT = 76;
@@ -22,6 +23,7 @@ export function ImageSidebar({
   classes,
   imageClassIdsByImageId = {},
   onSelectImage,
+  onDeleteImage,
 }: ImageSidebarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -64,6 +66,22 @@ export function ImageSidebar({
     setScrollTop(0);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [selectedClassId]);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element || viewportHeight === 0) return;
+
+    const currentIndex = filteredImages.findIndex((image) => image.id === currentImageId);
+    if (currentIndex === -1) return;
+
+    const rowTop = currentIndex * ROW_HEIGHT;
+    const centeredTop = rowTop - (viewportHeight - ROW_HEIGHT) / 2;
+    const maxScrollTop = Math.max(0, filteredImages.length * ROW_HEIGHT - viewportHeight);
+    const nextScrollTop = Math.max(0, Math.min(centeredTop, maxScrollTop));
+
+    element.scrollTop = nextScrollTop;
+    setScrollTop(nextScrollTop);
+  }, [currentImageId, filteredImages, viewportHeight]);
 
   return (
     <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-slate-700/40 bg-slate-950/55 backdrop-blur-xl">
@@ -150,10 +168,8 @@ export function ImageSidebar({
               const displayIndex = (indexById.get(img.id) || 0) + 1;
 
               return (
-                <button
+                <div
                   key={img.id}
-                  type="button"
-                  onClick={() => onSelectImage(img.id)}
                   className={`absolute left-3 right-3 grid h-16 grid-cols-[64px_1fr_auto] items-center gap-3 rounded-xl border p-2 text-left transition-all ${
                     isActive
                       ? "border-violet-400/50 bg-violet-500/15 shadow-lg shadow-violet-950/20"
@@ -161,21 +177,41 @@ export function ImageSidebar({
                   }`}
                   style={{ top: index * ROW_HEIGHT + 8 }}
                 >
-                  <LazyThumbnail imageId={img.id} alt={img.name} />
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-bold text-slate-100" title={img.relativePath || img.name}>
-                      {img.name}
-                    </p>
-                    <p className="mt-1 text-[10px] text-slate-500">
-                      #{String(displayIndex).padStart(3, "0")} - {img.width}x{img.height}
-                    </p>
+                  <button
+                    type="button"
+                    onClick={() => onSelectImage(img.id)}
+                    className="col-span-2 grid min-w-0 grid-cols-[64px_1fr] items-center gap-3 text-left"
+                    title={img.relativePath || img.name}
+                  >
+                    <LazyThumbnail imageId={img.id} alt={img.name} />
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-bold text-slate-100" title={img.relativePath || img.name}>
+                        {img.name}
+                      </p>
+                      <p className="mt-1 text-[10px] text-slate-500">
+                        #{String(displayIndex).padStart(3, "0")} - {img.width}x{img.height}
+                      </p>
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-1">
+                    {isLabeled ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    ) : (
+                      <Circle className="h-4 w-4 text-amber-300" />
+                    )}
+                    {onDeleteImage && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteImage(img.id)}
+                        className="rounded-md p-1 text-slate-500 hover:bg-red-500/10 hover:text-red-300"
+                        title="Gorseli sil"
+                        aria-label={`${img.name} gorselini sil`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
-                  {isLabeled ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                  ) : (
-                    <Circle className="h-4 w-4 text-amber-300" />
-                  )}
-                </button>
+                </div>
               );
             })}
           </div>

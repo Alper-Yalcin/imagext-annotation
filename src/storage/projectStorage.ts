@@ -1,4 +1,5 @@
 import { Project } from "../types/project";
+import { persistProjects } from "./serverStorage";
 
 const STORAGE_KEY = "imagext_projects";
 
@@ -22,6 +23,7 @@ export function getProjectById(projectId: string): Project | undefined {
 
 export function saveProjects(projects: Project[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+  persistProjects(projects);
 }
 
 export function addProject(project: Project): void {
