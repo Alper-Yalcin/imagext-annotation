@@ -48,7 +48,14 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
   const [activeProject, setActiveProject] = useState<Project>(project);
   const [images, setImages] = useState<ImageMeta[]>(initialImages);
   const [currentImage, setCurrentImage] = useState<ImageItem | null>(null);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    let lastLabeled = -1;
+    for (let i = 0; i < initialImages.length; i++) {
+      if (initialImages[i].status === "labeled") lastLabeled = i;
+    }
+    if (lastLabeled === -1) return 0;
+    return Math.min(lastLabeled + 1, initialImages.length - 1);
+  });
   const [selectedClassId, setSelectedClassId] = useState<string | undefined>();
   const [toolMode, setToolMode] = useState<AnnotationToolMode>("draw");
   const [boxes, setBoxes] = useState<DetectionAnnotation[]>([]);
@@ -198,7 +205,7 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
     }
 
     setIsSaving(true);
-    setTimeout(async () => {
+    void (async () => {
       try {
         replaceDetectionAnnotationsForImage(currentImage.id, activeProject.id, boxes);
         await updateImageStatus(currentImage.id, "labeled", activeProject.id);
@@ -215,7 +222,7 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
         setIsSaving(false);
         if (currentIndex < images.length - 1) setCurrentIndex(currentIndex + 1);
       }
-    }, 100);
+    })();
   }, [boxes, currentImage, activeProject.id, confirm, showToast, currentIndex, images.length]);
 
   const handleBackToProject = async () => {
@@ -315,17 +322,19 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
     });
   };
 
-  const handleDeleteImage = async (imageId: string) => {
+  const handleDeleteImage = async (imageId: string, skipConfirm = false) => {
     const targetImage = images.find((image) => image.id === imageId);
     if (!targetImage) return;
 
-    const confirmed = await confirm({
-      title: "Delete Image",
-      message: `"${targetImage.name}" silinsin mi? Bu gorsele ait annotation'lar da silinecek.`,
-      confirmLabel: "Delete Image",
-      variant: "danger",
-    });
-    if (!confirmed) return;
+    if (!skipConfirm) {
+      const confirmed = await confirm({
+        title: "Delete Image",
+        message: `"${targetImage.name}" silinsin mi? Bu gorsele ait annotation'lar da silinecek.`,
+        confirmLabel: "Delete Image",
+        variant: "danger",
+      });
+      if (!confirmed) return;
+    }
 
     deleteClassificationAnnotationByImageId(imageId);
     deleteDetectionAnnotationsByImageId(imageId);
@@ -540,7 +549,13 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
       F: fitToScreen,
       Z: () => setScale((value) => Math.min(10, value * 1.1)),
       X: () => setScale((value) => Math.max(0.1, value / 1.1)),
-      Delete: () => selectedBoxId && handleDeleteBox(selectedBoxId),
+      Delete: () => {
+        if (selectedBoxId) {
+          handleDeleteBox(selectedBoxId);
+          return;
+        }
+        if (currentImageMeta) void handleDeleteImage(currentImageMeta.id, true);
+      },
       Backspace: () => selectedBoxId && handleDeleteBox(selectedBoxId),
       Escape: () => {
         setSelectedBoxId(undefined);
@@ -560,7 +575,7 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
     });
 
     return map;
-  }, [handlePrev, handleNext, handleSave, activeProject.classes, selectedBoxId, handleDeleteBox, fitToScreen]);
+  }, [handlePrev, handleNext, handleSave, activeProject.classes, selectedBoxId, handleDeleteBox, handleDeleteImage, fitToScreen, currentImageMeta]);
 
   useKeyboardShortcuts(shortcutMap, !showShortcuts);
 
@@ -766,7 +781,7 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
               <Shortcut k="V" label="Secim modu" />
               <Shortcut k="H" label="Tasima modu" />
               <Shortcut k="S" label="Kaydet" />
-              <Shortcut k="Del" label="Sil" />
+              <Shortcut k="Del" label="Kutu / gorsel sil" />
             </div>
           </div>
         </aside>
@@ -781,6 +796,7 @@ export function YoloAnnotator({ project, initialImages }: YoloAnnotatorProps) {
           <Shortcut k="H" label="Tasima modu" />
           <Shortcut k="1-9" label="Sinif sec" />
           <Shortcut k="Ctrl+Z / Y" label="Geri / ileri al" />
+          <Shortcut k="Del" label="Kutu seciliyse kutuyu, degilse gorseli sil" />
           <Shortcut k="Esc" label="Secimi temizle" />
         </div>
       </Modal>

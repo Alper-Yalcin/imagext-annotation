@@ -31,7 +31,6 @@ export function ImageSidebar({
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedClassId, setSelectedClassId] = useState<string | undefined>();
 
-  const labeled = images.filter((img) => img.status === "labeled").length;
   const indexById = useMemo(() => {
     const map = new Map<string, number>();
     images.forEach((image, index) => map.set(image.id, index));
@@ -48,6 +47,7 @@ export function ImageSidebar({
   const endIndex = Math.min(filteredImages.length, startIndex + visibleCount);
   const visibleImages = filteredImages.slice(startIndex, endIndex);
   const selectedClass = classes.find((cls) => cls.id === selectedClassId);
+  const labeled = filteredImages.filter((img) => img.status === "labeled").length;
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -139,7 +139,7 @@ export function ImageSidebar({
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <Badge variant="labeled">{labeled} labeled</Badge>
-          <Badge variant="unlabeled">{images.length - labeled} left</Badge>
+          <Badge variant="unlabeled">{filteredImages.length - labeled} left</Badge>
         </div>
         {selectedClass && (
           <button

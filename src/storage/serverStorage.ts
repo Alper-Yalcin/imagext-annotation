@@ -56,6 +56,18 @@ export function persistImageMetas(images: ImageMeta[]): void {
   enqueuePersist("images", images);
 }
 
+export function persistImageData(images: ImageItem[]): void {
+  enqueuePersist("image-data", images.map(({ id, dataUrl }) => ({ id, dataUrl })));
+}
+
+export function deletePersistedImageData(imageIds: string[]): void {
+  enqueuePersist("image-data/delete", imageIds);
+}
+
+export function persistImageStatus(imageId: string, status: ImageMeta["status"]): void {
+  enqueuePersist("image-status", { imageId, status });
+}
+
 export async function getServerImageDataUrl(imageId: string): Promise<string | undefined> {
   try {
     const response = await fetch(`${API_BASE}/image-data/${encodeURIComponent(imageId)}`);

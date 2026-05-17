@@ -1,6 +1,13 @@
 import { del, get, getMany, keys, set, setMany } from "idb-keyval";
 import { ImageItem, ImageMeta, ImageStatus } from "../types/image";
-import { getServerImageDataUrl, persistImageMetas, persistImages } from "./serverStorage";
+import {
+  deletePersistedImageData,
+  getServerImageDataUrl,
+  persistImageData,
+  persistImageMetas,
+  persistImages,
+  persistImageStatus,
+} from "./serverStorage";
 
 const LEGACY_STORAGE_KEY = "imagext_images";
 const MIGRATION_KEY = "imagext_images_v2_migrated";
@@ -78,6 +85,14 @@ export async function getImages(): Promise<ImageItem[]> {
     console.error("Failed to parse images from IndexedDB", e);
     return [];
   }
+}
+
+export async function getImageMetas(): Promise<ImageMeta[]> {
+  await migrateLegacyImages();
+  const allKeys = await keys<string>();
+  const projectKeys = allKeys.filter((key) => key.startsWith(PROJECT_IMAGES_PREFIX));
+  const projectImageGroups = await getManyInBatches<ImageMeta[]>(projectKeys);
+  return projectImageGroups.flatMap((group) => group || []);
 }
 
 export async function saveImages(images: ImageItem[]): Promise<void> {
@@ -182,7 +197,8 @@ export async function addImages(newImages: ImageItem[]): Promise<void> {
     await set(projectImagesKey(projectId), [...existingImages, ...projectImages.map(toImageMeta)]);
     await setManyInBatches(projectImages.map((image) => [imageDataKey(image.id), image.dataUrl]));
   }
-  persistImages(await getImages());
+  persistImageData(newImages);
+  persistImageMetas(await getImageMetas());
 }
 
 export async function deleteImage(imageId: string, projectId?: string): Promise<void> {
@@ -193,7 +209,8 @@ export async function deleteImage(imageId: string, projectId?: string): Promise<
   const images = await getImageMetasByProjectId(targetProjectId);
   await set(projectImagesKey(targetProjectId), images.filter(img => img.id !== imageId));
   await del(imageDataKey(imageId));
-  persistImages(await getImages());
+  deletePersistedImageData([imageId]);
+  persistImageMetas(await getImageMetas());
 }
 
 export async function deleteImagesByProjectId(projectId: string): Promise<void> {
@@ -201,7 +218,8 @@ export async function deleteImagesByProjectId(projectId: string): Promise<void> 
   const images = await getImageMetasByProjectId(projectId);
   await set(projectImagesKey(projectId), []);
   await Promise.all(images.map((image) => del(imageDataKey(image.id))));
-  persistImages(await getImages());
+  deletePersistedImageData(images.map((image) => image.id));
+  persistImageMetas(await getImageMetas());
 }
 
 export async function updateImageStatus(imageId: string, status: ImageStatus, projectId?: string): Promise<void> {
@@ -214,7 +232,7 @@ export async function updateImageStatus(imageId: string, status: ImageStatus, pr
     img.id === imageId ? { ...img, status } : img
   );
   await set(projectImagesKey(targetProjectId), updated);
-  persistImages(await getImages());
+  persistImageStatus(imageId, status);
 }
 
 async function findProjectIdByImageId(imageId: string): Promise<string | undefined> {

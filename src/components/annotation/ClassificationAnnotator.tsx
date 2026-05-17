@@ -46,7 +46,14 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
   const [activeProject, setActiveProject] = useState<Project>(project);
   const [images, setImages] = useState<ImageMeta[]>(initialImages);
   const [currentImage, setCurrentImage] = useState<ImageItem | null>(null);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    let lastLabeled = -1;
+    for (let i = 0; i < initialImages.length; i++) {
+      if (initialImages[i].status === "labeled") lastLabeled = i;
+    }
+    if (lastLabeled === -1) return 0;
+    return Math.min(lastLabeled + 1, initialImages.length - 1);
+  });
   const [selectedClassId, setSelectedClassId] = useState<string | undefined>();
   const [savedClassId, setSavedClassId] = useState<string | undefined>();
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -142,7 +149,7 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
     if (!isDirty) return;
 
     setIsSaving(true);
-    setTimeout(async () => {
+    void (async () => {
       try {
         upsertClassificationAnnotation({
           imageId: currentImage.id,
@@ -163,7 +170,7 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
         setIsSaving(false);
         if (currentIndex < images.length - 1) setCurrentIndex(currentIndex + 1);
       }
-    }, 100);
+    })();
   }, [selectedClassId, isDirty, currentImage, activeProject.id, currentIndex, images.length, showToast]);
 
   const handleBackToProject = async () => {
@@ -250,17 +257,19 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
     });
   };
 
-  const handleDeleteImage = async (imageId: string) => {
+  const handleDeleteImage = async (imageId: string, skipConfirm = false) => {
     const targetImage = images.find((image) => image.id === imageId);
     if (!targetImage) return;
 
-    const confirmed = await confirm({
-      title: "Delete Image",
-      message: `"${targetImage.name}" silinsin mi? Bu gorsele ait annotation'lar da silinecek.`,
-      confirmLabel: "Delete Image",
-      variant: "danger",
-    });
-    if (!confirmed) return;
+    if (!skipConfirm) {
+      const confirmed = await confirm({
+        title: "Delete Image",
+        message: `"${targetImage.name}" silinsin mi? Bu gorsele ait annotation'lar da silinecek.`,
+        confirmLabel: "Delete Image",
+        variant: "danger",
+      });
+      if (!confirmed) return;
+    }
 
     deleteClassificationAnnotationByImageId(imageId);
     deleteDetectionAnnotationsByImageId(imageId);
@@ -346,6 +355,7 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
       Z: handleZoomIn,
       X: handleZoomOut,
       F: handleFitImage,
+      Delete: () => currentImageMeta && handleDeleteImage(currentImageMeta.id, true),
       Escape: () => setSelectedClassId(undefined),
       "?": () => setShowShortcuts(true),
     };
@@ -355,7 +365,7 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
     });
 
     return map;
-  }, [handlePrev, handleNext, handleSave, handleZoomIn, handleZoomOut, handleFitImage, activeProject.classes]);
+  }, [handlePrev, handleNext, handleSave, handleZoomIn, handleZoomOut, handleFitImage, handleDeleteImage, activeProject.classes, currentImageMeta]);
 
   useKeyboardShortcuts(shortcutMap, !showShortcuts);
 
@@ -532,6 +542,7 @@ export function ClassificationAnnotator({ project, initialImages }: Classificati
           <Shortcut k="S" label="Kaydet" />
           <Shortcut k="Z / X" label="Yakinlastir / uzaklastir" />
           <Shortcut k="F" label="Fit" />
+          <Shortcut k="Del" label="Gorseli sil" />
           <Shortcut k="1-9" label="Sinif sec" />
           <Shortcut k="Esc" label="Secimi temizle" />
         </div>
